@@ -5,7 +5,7 @@ import requests
 import zipfile
 import numpy as np
 import concurrent.futures
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
+from PIL import Image, ImageDraw, ImageFont
 
 from rapidocr import EngineType, LangDet, LangRec, ModelType, OCRVersion, RapidOCR
 
@@ -154,31 +154,10 @@ class Typesetter:
         
         for block in text_blocks:
             box = block['box']
-            bw, bh = box[2] - box[0], box[3] - box[1]
-            if bw < 6 or bh < 6: continue
-            
-            # --- LOGIKA BACKGROUND FADING ---
-            pad = 15 # Area ekstra untuk tempat efek blur menyebar
-            patch_w, patch_h = bw + (pad * 2), bh + (pad * 2)
-            
-            # Buat kanvas kecil transparan khusus untuk 1 kotak teks ini
-            patch = Image.new('RGBA', (patch_w, patch_h), (255, 255, 255, 0))
-            draw_patch = ImageDraw.Draw(patch)
-            
-            # Gambar kotak putih solid di tengah (kita lebarkan sedikit agar teks tetap terbaca)
-            inner_box = [pad - 5, pad - 5, patch_w - pad + 5, patch_h - pad + 5]
-            draw_patch.rounded_rectangle(inner_box, radius=8, fill=(255, 255, 255, 255))
-            
-            # Berikan efek blur agar tepiannya pudar merata ke transparan
-            patch = patch.filter(ImageFilter.GaussianBlur(radius=10))
-            
-            # Tempelkan kotak yang sudah pudar ini ke overlay utama
-            overlay.paste(patch, (box[0] - pad, box[1] - pad), mask=patch)
-            # --------------------------------
+            draw_overlay.rounded_rectangle(box, radius=6, fill=(255, 255, 255, 240))
             
         pil_img = Image.alpha_composite(pil_img.convert('RGBA'), overlay).convert('RGB')
         draw = ImageDraw.Draw(pil_img)
-
         
         for block in text_blocks:
             box = block['box']
