@@ -19,7 +19,7 @@ class OCREngine:
         # Inisialisasi PaddleOCR
         # use_gpu=False sangat penting agar aman jalan di CPU GitHub Actions
         # lang='en' mencakup teks Inggris dan alfabet Indonesia
-        self.reader = PaddleOCR(use_textline_orientation=False, lang='en', use_gpu=False)
+        self.reader = PaddleOCR(use_textline_orientation=False, lang='en')
 
 
     def detect_and_merge(self, img_path):
