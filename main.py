@@ -152,9 +152,14 @@ class Typesetter:
         overlay = Image.new('RGBA', pil_img.size, (0, 0, 0, 0))
         draw_overlay = ImageDraw.Draw(overlay)
         
+        # 1. Modifikasi: Gambar background HANYA jika teks lebih dari 1 kata
         for block in text_blocks:
             box = block['box']
-            draw_overlay.rounded_rectangle(box, radius=6, fill=(255, 255, 255, 240))
+            display_text = block.get('translated_text', block['text'])
+            
+            # Cek jumlah kata
+            if len(display_text.split()) > 1:
+                draw_overlay.rounded_rectangle(box, radius=6, fill=(255, 255, 255, 240))
             
         pil_img = Image.alpha_composite(pil_img.convert('RGBA'), overlay).convert('RGB')
         draw = ImageDraw.Draw(pil_img)
@@ -164,6 +169,9 @@ class Typesetter:
             bw, bh = box[2] - box[0], box[3] - box[1]
             if bw < 6 or bh < 6: continue
             
+            display_text = block.get('translated_text', block['text'])
+            is_single_word = len(display_text.split()) <= 1 # Deteksi 1 kata
+            
             font_size = int(block.get('orig_line_height', bh) * 0.8)
             font_size = max(10, min(100, font_size)) 
             
@@ -171,7 +179,7 @@ class Typesetter:
                 font = ImageFont.truetype(font_path, font_size) if os.path.exists(font_path) else ImageFont.load_default()
                 lines, current_line = [], []
                 
-                for word in block.get('translated_text', block['text']).upper().split():
+                for word in display_text.upper().split():
                     test_line = ' '.join(current_line + [word]) if current_line else word
                     test_bbox = draw.textbbox((0, 0), test_line, font=font)
                     if (test_bbox[2] - test_bbox[0]) <= bw * 0.95:
@@ -194,7 +202,12 @@ class Typesetter:
             for line in lines:
                 cw = draw.textbbox((0, 0), line, font=font)[2] - draw.textbbox((0, 0), line, font=font)[0]
                 cx = box[0] + (bw - cw) // 2
-                stroke_w = max(1, int(font_size * 0.05))
+                
+                # 2. Modifikasi: Atur ketebalan stroke (shadow)
+                if is_single_word:
+                    stroke_w = max(2, int(font_size * 0.12)) # Lebih tebal untuk 1 kata
+                else:
+                    stroke_w = max(1, int(font_size * 0.05)) # Normal
                 
                 for adj_x in range(-stroke_w, stroke_w + 1):
                     for adj_y in range(-stroke_w, stroke_w + 1):
@@ -213,34 +226,6 @@ def download_image(url, save_path):
             return True
     except Exception: pass
     return False
-
-def translate_comic(input_path, output_path, ocr, translator, font_path):
-    try:
-        img = Image.open(input_path).convert("RGB")
-    except Exception:
-        return False
-        
-    blocks = ocr.detect_and_merge(input_path)
-    if not blocks: return False
-    
-    # --- LOGIKA SKIP 1 KELOMPOK & 1 KATA ---
-    if len(blocks) == 1:
-        teks = blocks[0]['text']
-        # .split() memecah string berdasarkan spasi. Jika hasilnya <= 1, berarti cuma 1 kata.
-        if len(teks.split()) <= 1:
-            return False
-    # ---------------------------------------
-    
-    translations = translator.translate_batch([b['text'] for b in blocks])
-    for i, b in enumerate(blocks):
-        b['translated_text'] = translations[i] if i < len(translations) else b['text']
-        b['colors'] = ImageProcessor.detect_colors(img, b['box'])
-        
-    final_img = Typesetter.apply_text(img, blocks, font_path)
-    
-    final_img.save(output_path, format="WEBP", quality=80)
-    return True
-
 
 # --- 1. Fungsi Mengunduh Saja ---
 def download_page(page, out_dir):
@@ -350,26 +335,6 @@ def merge_short_images(raw_paths, target_height=2200, max_workers=6):
         
     return merged_paths
 
-# --- 3. Fungsi Memproses Gambar Gabungan Lokal ---
-def process_local_image(input_path, out_dir, idx, ocr, translator, font_path):
-    # Menyimpan hasil akhir dalam bentuk WEBP 
-    # (Penomoran dibantu dengan zfill agar urut di folder zip, misal 01, 02, 03)
-    final_path = os.path.join(out_dir, f"terjemahan_{str(idx).zfill(3)}.webp")
-    msg = f"Gambar Gabungan {idx} -> "
-
-    if translate_comic(input_path, final_path, ocr, translator, font_path):
-        if os.path.exists(input_path):
-            os.remove(input_path) 
-        return msg + "Selesai diterjemahkan!"
-    else:
-        try:
-            img = Image.open(input_path).convert("RGB")
-            img.save(final_path, format="WEBP", quality=80)
-            if os.path.exists(input_path):
-                os.remove(input_path)
-            return msg + "Dilewati (Tidak ada teks), menyimpan gambar asli."
-        except Exception as e:
-            return msg + f"Gagal menyimpan gambar asli: {e}"
 
 def main():
     mangas = [u for u in config.URLMANGA if u.strip()]
@@ -442,23 +407,82 @@ def main():
         merged_paths = merge_short_images(raw_paths, target_height=2200, max_workers=6)
 
         # ==========================================
-        # FASE 3: Proses OCR pada Gambar Gabungan
+        # FASE 3: Ekstraksi Teks (OCR) dari Semua Halaman
         # ==========================================
-        print(f"Memulai pemrosesan {len(merged_paths)} gambar gabungan (max_workers=2)...")
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            futures = {
-                executor.submit(process_local_image, path, out_dir, i+1, ocr, translator, font_path): i+1
-                for i, path in enumerate(merged_paths)
-            }
-            for future in concurrent.futures.as_completed(futures):
+        print(f"Mengekstraksi teks (OCR) dari {len(merged_paths)} gambar gabungan...")
+        page_blocks_list = [] # Menyimpan tuple (path, blocks_valid)
+        kumpulan_teks = []    # Gabungan seluruh teks untuk batch translation
+
+        for path in merged_paths:
+            blocks = ocr.detect_and_merge(path)
+            
+            # --- LOGIKA SKIP 1 KELOMPOK & 1 KATA ---
+            if blocks and len(blocks) == 1:
+                if len(blocks[0]['text'].split()) <= 1:
+                    blocks = [] # Kosongkan agar tidak diterjemahkan/typeset
+            # ---------------------------------------
+
+            page_blocks_list.append((path, blocks))
+            
+            # Kumpulkan teks yang valid ke satu wadah besar
+            for b in blocks:
+                kumpulan_teks.append(b['text'])
+
+        # ==========================================
+        # FASE 4: Batch Translation 
+        # ==========================================
+        if kumpulan_teks:
+            print(f"Menerjemahkan {len(kumpulan_teks)} blok teks sekaligus (Batch)...")
+            hasil_terjemahan = translator.translate_batch(kumpulan_teks)
+        else:
+            print("Tidak ada teks yang perlu diterjemahkan di chapter ini.")
+            hasil_terjemahan = []
+
+        # ==========================================
+        # FASE 5: Typesetting & Distribusi Kembali
+        # ==========================================
+        print("Merender teks ke gambar dan menyimpan hasil akhir...")
+        text_index = 0
+        
+        for idx, (path, blocks) in enumerate(page_blocks_list):
+            final_path = os.path.join(out_dir, f"terjemahan_{str(idx+1).zfill(3)}.webp")
+            
+            # Jika tidak ada teks di gambar ini, langsung save ulang jadi webp
+            if not blocks:
                 try:
-                    result_msg = future.result()
-                    print(result_msg)
-                except Exception as exc:
-                    print(f"Gambar Gabungan {futures[future]} -> Terjadi error tak terduga: {exc}")
+                    img = Image.open(path).convert("RGB")
+                    img.save(final_path, format="WEBP", quality=80)
+                except Exception as e:
+                    print(f"Gagal menyimpan halaman {idx+1}: {e}")
+                finally:
+                    if os.path.exists(path): os.remove(path)
+                continue
+                
+            # Proses Typesetting jika ada teks
+            try:
+                img = Image.open(path).convert("RGB")
+                
+                # Pasangkan teks terjemahan ke block yang sesuai
+                for b in blocks:
+                    if text_index < len(hasil_terjemahan):
+                        b['translated_text'] = hasil_terjemahan[text_index]
+                    else:
+                        b['translated_text'] = b['text'] # Fallback kalau beda panjang array
+                        
+                    b['colors'] = ImageProcessor.detect_colors(img, b['box'])
+                    text_index += 1
+                    
+                # Eksekusi apply_text
+                final_img = Typesetter.apply_text(img, blocks, font_path)
+                final_img.save(final_path, format="WEBP", quality=80)
+                
+            except Exception as e:
+                print(f"Gagal memproses typesetting halaman {idx+1}: {e}")
+            finally:
+                if os.path.exists(path): os.remove(path)
                     
         # ==========================================
-        # FASE 4: Pengarsipan CBZ
+        # FASE 6: Pengarsipan CBZ
         # ==========================================
         cbz_path = os.path.join("output", f"{folder_name}.cbz")
         print(f"\nMengarsipkan ke: {cbz_path}...")
