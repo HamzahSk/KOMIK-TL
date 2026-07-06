@@ -118,12 +118,22 @@ class OCREngine:
             min_x, min_y = min([b[0] for b in group_boxes]), min([b[1] for b in group_boxes])
             max_x, max_y = max([b[2] for b in group_boxes]), max([b[3] for b in group_boxes])
             
-            merged.append({
-                "text": " ".join(combined_text),
-                "box": [min_x, min_y, max_x, max_y], # Padding tambahan dihapus agar background tidak kebesaran
-                "orig_line_height": sum([b[3] - b[1] for b in group_boxes]) / len(group_boxes)
-            })
+            gabungan_teks = " ".join(combined_text)
+            
+            # FILTER TEKS: Hitung jumlah huruf (hanya A-Z) dalam kelompok ini
+            # Mengabaikan spasi, angka, dan simbol
+            jumlah_huruf = len(re.sub(r'[^A-Z]', '', gabungan_teks.upper()))
+            
+            # Jika jumlah huruf > 2, berarti valid (bukan cuma 1-2 huruf, bukan cuma angka, bukan cuma simbol)
+            if jumlah_huruf > 2:
+                merged.append({
+                    "text": gabungan_teks,
+                    "box": [min_x, min_y, max_x, max_y], 
+                    "orig_line_height": sum([b[3] - b[1] for b in group_boxes]) / len(group_boxes)
+                })
+                
         return merged
+
 
 class ImageProcessor:
     @staticmethod
@@ -240,12 +250,23 @@ def process_single_page(page, out_dir, ocr, translator, font_path):
     
     msg = f"Halaman {idx} -> "
     if download_image(page['imageUrl'], raw_path):
+        # Jika berhasil mendeteksi dan menerjemahkan
         if translate_comic(raw_path, final_path, ocr, translator, font_path):
             if os.path.exists(raw_path):
                 os.remove(raw_path) 
-            return msg + "Selesai!"
+            return msg + "Selesai diterjemahkan!"
         else:
-            return msg + "Dilewati (Tidak ada teks/Error)"
+            # JIKA SKIP: Teks kosong atau cuma simbol/angka yang di-filter
+            # Convert langsung raw image ke format webp akhir supaya masuk ke archive .cbz
+            try:
+                img = Image.open(raw_path).convert("RGB")
+                img.save(final_path, format="WEBP", quality=80)
+                if os.path.exists(raw_path):
+                    os.remove(raw_path)
+                return msg + "Dilewati (Tidak ada teks), menyimpan gambar asli."
+            except Exception as e:
+                return msg + f"Gagal menyimpan gambar asli: {e}"
+                
     return msg + "Gagal mengunduh gambar."
 
 def main():
