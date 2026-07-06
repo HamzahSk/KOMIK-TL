@@ -1,4 +1,4 @@
-# translator.py
+# scraper_tl.py
 import time
 import re
 import requests
@@ -66,10 +66,11 @@ class AiTranslator:
         all_translations = []
         
         for batch_idx, batch in enumerate(batches):
-            print(f"  [AI] Batch {batch_idx+1}/{len(batches)}: Menerjemahkan {len(batch)} teks via OnChatbot...")
+            print(f"[Batch {batch_idx+1}/{len(batches)}] Menerjemahkan {len(batch)} teks via OnChatbot...")
             try:
                 user_message = self._format_batch_text(batch)
                 
+                # Menyiapkan Form Data sesuai struktur JS
                 payload = {
                     'action': 'do_chat_with_ai',
                     'ai_chatbot_nonce': self.nonce,
@@ -81,45 +82,60 @@ class AiTranslator:
                     'ai_message': "Zero registration required. I'm ready when you are. What can I do for you today?"
                 }
                 
+                # Menggunakan parameter 'data' agar Python otomatis mengirimnya sebagai form-urlencoded
                 response = requests.post(self.api_url, headers=self.headers, data=payload)
                 response.raise_for_status()
                 
+                # Ekstrak dari JSON respons web
                 data = response.json()
                 if not data.get('success'):
-                    print(f"  [Error] API merespon gagal: {data}")
+                    print(f"[Error] API merespon gagal: {data}")
                     all_translations.extend(batch)
                     continue
                     
                 ai_response = data.get('data', '')
                 print("\n=== RAW RESPONSE ===")
                 print(ai_response)
+                
+                # Ekstraksi hasil
                 translations = self._extract_translations(ai_response)
                 
                 if len(translations) != len(batch):
-                    print(f"  [Warning] Jumlah terjemahan tidak selaras ({len(translations)} vs {len(batch)}). Mencoba pembersihan ekstra...")
+                    print(f"[Warning] Jumlah terjemahan tidak selaras ({len(translations)} vs {len(batch)}). Mencoba pembersihan ekstra...")
+                    
+                    # Pembersihan ekstra dengan logika yang sama
                     raw_lines = [line.strip() for line in ai_response.split('\n') if line.strip() and self.SEPARATOR not in line]
                     if len(raw_lines) == len(batch):
                         translations = [self._clean_part(l) for l in raw_lines]
                     else:
-                        print("  [Warning] Pembersihan ekstra gagal. Menggunakan teks asli untuk batch ini.")
+                        print("[Warning] Pembersihan ekstra gagal. Menggunakan teks asli untuk batch ini.")
                         translations = batch
                         
                 all_translations.extend(translations)
                 time.sleep(1.5)
                 
             except Exception as e:
-                print(f"  [Error] Gagal menerjemahkan batch: {e}")
+                print(f"[Error] Gagal menerjemahkan batch: {e}")
                 all_translations.extend(batch)
                 
         return all_translations
 
     def _clean_part(self, text):
+        """Fungsi pembantu untuk membersihkan satu bagian teks/baris."""
         cleaned = text.strip()
+        # Hapus angka bullet di awal (misal "1. " atau "1) ")
         cleaned = re.sub(r'^\d+[\.\)]\s*', '', cleaned)
+        
+        # Cek jika ada tanda titik dua ':'
         if ':' in cleaned:
+            # Pecah hanya di titik dua yang pertama
             prefix, suffix = cleaned.split(':', 1)
+            
+            # Cek apakah awalan mengandung kata 'terjemah' (case-insensitive)
             if 'terjemah' in prefix.lower():
+                # Ambil teks setelah titik dua dan hapus spasi berlebih
                 cleaned = suffix.strip()
+                
         return cleaned
 
     def _extract_translations(self, response_text):
@@ -132,6 +148,7 @@ class AiTranslator:
                     translations.append(cleaned)
             return translations
         
+        # Fallback jika SEPARATOR tidak ditemukan
         lines = [line.strip() for line in response_text.split('\n') if line.strip()]
         translations = [self._clean_part(line) for line in lines]
         return translations if translations else [response_text]
