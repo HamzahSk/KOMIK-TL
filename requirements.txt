@@ -1,4 +1,5 @@
 rapidocr
+onnxruntime
 opencv-python
 pillow
 numpy<2
