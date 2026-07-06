@@ -25,26 +25,24 @@ jobs:
           python-version: "3.10"
           cache: "pip"
 
-      # [UPDATED] Cache folder diubah menjadi ~/.paddleocr
+      # Cache model OCR & cache Python
       - name: Cache OCR Models
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache
-            ~/.paddleocr
+            ~/.rapidocr
           key: ocr-cache-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
           restore-keys: |
             ocr-cache-${{ runner.os }}-
 
-      # [UPDATED] Tambahan libgomp1 untuk dependensi PaddlePaddle CPU
       - name: Install System Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             fonts-liberation \
             libgl1 \
-            libglib2.0-0 \
-            libgomp1
+            libglib2.0-0
 
       - name: Install Python Dependencies
         run: |

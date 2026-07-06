@@ -1,6 +1,5 @@
-paddlepaddle==2.6.2
-paddleocr==2.9.1
-opencv-python-headless
+rapidocr_onnxruntime
+opencv-python
 pillow
 numpy<2
 requests
