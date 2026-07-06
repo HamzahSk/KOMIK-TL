@@ -10,7 +10,7 @@ from PIL import Image, ImageDraw, ImageFont
 from rapidocr import EngineType, LangDet, LangRec, ModelType, OCRVersion, RapidOCR
 
 import config
-from scraper import get_chapter_list, get_page_list
+from scraper import get_chapter_list, fetch_chapter_soup, get_page_list, get_chapter_name
 from translator import AiTranslator 
 
 class OCREngine:
@@ -261,32 +261,47 @@ def main():
     os.makedirs("output", exist_ok=True)
     all_targets = []
 
+    # 1. Kumpulkan semua URL yang mau diproses
     for m_url in mangas:
         print(f"\n[Scraper] Mendapatkan daftar chapter dari: {m_url}")
         for ch in get_chapter_list(m_url):
-            all_targets.append(ch)
+            all_targets.append(ch['url'])
             
     for c_url in chapters:
-        if not any(t['url'] == c_url for t in all_targets):
-            clean_url = c_url.split('?')[0]
-            parts = [p for p in clean_url.split('/') if p]
-            fallback_name = f"{parts[-2]}_{parts[-1]}" if len(parts) >= 2 else parts[-1]
-            all_targets.append({'url': c_url, 'name': fallback_name})
+        if c_url not in all_targets:
+            all_targets.append(c_url)
 
     ocr = OCREngine()
     translator = AiTranslator()
 
-    for target in all_targets:
-        ch_url = target['url']
-        raw_name = target['name']
+    # 2. Proses masing-masing chapter
+    for ch_url in all_targets:
+        print(f"\n[Scraper] Mengambil data halaman untuk: {ch_url}")
+        
+        # --- PERUBAHAN UTAMA DI SINI ---
+        # Fetch web satu kali saja untuk mengambil object soup
+        soup = fetch_chapter_soup(ch_url)
+        if not soup:
+            print("[Error] Gagal memuat halaman web. Melewati chapter ini...")
+            continue
+            
+        # Ambil nama chapter khusus dari fungsi get_chapter_name()
+        raw_name = get_chapter_name(soup)
         
         folder_name = re.sub(r'[^a-zA-Z0-9_\-\s]', '_', raw_name).strip()[:100]
         out_dir = os.path.join("output", folder_name)
         os.makedirs(out_dir, exist_ok=True)
         
         print(f"\n{'='*40}\nMemproses Chapter: {folder_name}\n{'='*40}")
-        pages = get_page_list(ch_url)
         
+        # Ambil list halaman menggunakan object soup yang sama
+        pages = get_page_list(soup)
+        # -------------------------------
+        
+        if not pages:
+            print("[Warning] Tidak ada halaman gambar yang ditemukan.")
+            continue
+            
         print(f"Memulai pemrosesan {len(pages)} halaman (Multithreading max_workers=2)...")
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
             futures = {
