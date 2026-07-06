@@ -4,6 +4,8 @@ import re
 import json
 import random
 import requests
+import uuid
+from datetime import datetime, timezone
 
 class AiTranslator:
     def __init__(self):
@@ -19,8 +21,12 @@ class AiTranslator:
             'Cookie': 'snp_popup_seen=1'
         }
         
-        # Konfigurasi API Fallback (DeepSeek Proxy)
+        # Konfigurasi API Fallback 1 (DeepSeek Proxy)
         self.fallback_url = 'https://llmproxy.org/api/chat.php'
+        
+        # Konfigurasi API Fallback 2 (Unlimited AI)
+        self.unliai_url = 'https://app.unlimitedai.chat/api/chat'
+        self.unliai_device_id = str(uuid.uuid4()) # Generate random device ID per sesi bot
         
         self.MAX_CHARS = 1500
         self.SEPARATOR = '130495848'
@@ -35,7 +41,7 @@ class AiTranslator:
         )
 
     def _get_fallback_headers(self):
-        """Membuat header dinamis dengan IP acak untuk fallback."""
+        """Membuat header dinamis dengan IP acak untuk Fallback 1 (DeepSeek)."""
         ip = f"{random.randint(1, 255)}.{random.randint(0, 255)}.{random.randint(0, 255)}.{random.randint(0, 255)}"
         return {
             'Accept': '*/*',
@@ -75,8 +81,8 @@ class AiTranslator:
         )
 
     def _fallback_translate(self, prompt_text):
-        """Metode fallback menggunakan DeepSeek via llmproxy."""
-        print("[System] Memulai sesi Fallback via DeepSeek...")
+        """Metode Fallback 1 menggunakan DeepSeek via llmproxy."""
+        print("[System] Memulai sesi Fallback 1 via DeepSeek Proxy...")
         
         payload = {
             "messages": [{"content": prompt_text, "role": "user"}],
@@ -102,7 +108,73 @@ class AiTranslator:
             return clean_content
             
         except Exception as e:
-            print(f"[Error] Fallback API DeepSeek gagal: {e}")
+            print(f"[Error] Fallback 1 API DeepSeek gagal: {e}")
+            return None
+            
+    def _fallback_unliai_translate(self, prompt_text):
+        """Metode Fallback 2 menggunakan Unlimited AI."""
+        print("[System] Memulai sesi Fallback 2 via Unlimited AI...")
+        
+        chat_id = str(uuid.uuid4())
+        # Format waktu ISO 8601 dengan akhiran Z
+        now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        
+        messages = [
+            {
+                "id": str(uuid.uuid4()),
+                "content": prompt_text,
+                "createdAt": now,
+                "parts": [{"type": "text", "text": prompt_text}],
+                "role": "user"
+            },
+            {
+                "id": str(uuid.uuid4()),
+                "content": "",
+                "createdAt": now,
+                "parts": [{"type": "text", "text": ""}],
+                "role": "assistant"
+            }
+        ]
+        
+        payload = {
+            "chatId": chat_id,
+            "deviceId": self.unliai_device_id,
+            "locale": "id",
+            "messages": messages,
+            "selectedCharacter": None,
+            "selectedChatModel": "chat-model-reasoning",
+            "selectedStory": None
+        }
+        
+        headers = {
+            'accept': '*/*',
+            'content-type': 'application/json',
+            'origin': 'https://app.unlimitedai.chat',
+            'referer': 'https://app.unlimitedai.chat/id',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'x-next-intl-locale': 'id'
+        }
+        
+        try:
+            response = requests.post(self.unliai_url, headers=headers, json=payload, stream=True, timeout=30)
+            response.raise_for_status()
+            
+            full_reply = ""
+            for line in response.iter_lines(decode_unicode=True):
+                if line:
+                    try:
+                        parsed = json.loads(line)
+                        if parsed.get('type') == 'delta' and parsed.get('delta'):
+                            full_reply += parsed['delta']
+                    except json.JSONDecodeError:
+                        continue
+                        
+            # Hapus tag <think> jika ada
+            clean_content = re.sub(r'<think>.*?</think>', '', full_reply, flags=re.DOTALL | re.IGNORECASE).strip()
+            return clean_content
+            
+        except Exception as e:
+            print(f"[Error] Fallback 2 API Unlimited AI gagal: {e}")
             return None
 
     def translate_batch(self, texts):
@@ -115,7 +187,6 @@ class AiTranslator:
         for batch_idx, batch in enumerate(batches):
             print(f"\n[Batch {batch_idx+1}/{len(batches)}] Menerjemahkan {len(batch)} teks...")
             user_message = self._format_batch_text(batch)
-            print(user_message)
             translations = []
             
             try:
@@ -150,16 +221,20 @@ class AiTranslator:
                     if len(raw_lines) == len(batch):
                         translations = [self._clean_part(l) for l in raw_lines]
                     else:
-                        # JIKA MASIH GAGAL, PAKSA ERROR AGAR MASUK KE FALLBACK
                         raise ValueError(f"Format teks dari API Utama berantakan ({len(translations)} terjemahan vs {len(batch)} asli)")
                 
                 print("=== RESPON UTAMA SUKSES ===")
                 
             except Exception as e:
-                # 2. Jika Gagal API atau Format Salah, jalankan Fallback (DeepSeek)
-                print(f"[Warning] API Utama Bermasalah ({e}). Beralih ke Fallback...")
+                # 2. Jika API Utama Gagal, coba Fallback 1 (DeepSeek)
+                print(f"[Warning] API Utama Bermasalah ({e}). Beralih ke Fallback 1 (DeepSeek Proxy)...")
                 ai_response = self._fallback_translate(user_message)
                 
+                if not ai_response:
+                    # 3. Jika Fallback 1 Gagal, coba Fallback 2 (Unlimited AI)
+                    print(f"[Warning] Fallback 1 (DeepSeek) Bermasalah. Beralih ke Fallback 2 (Unlimited AI)...")
+                    ai_response = self._fallback_unliai_translate(user_message)
+
                 if ai_response:
                     # Ekstrak hasil Fallback
                     translations = self._extract_translations(ai_response)
@@ -175,7 +250,7 @@ class AiTranslator:
                     else:
                         print("=== RESPON FALLBACK SUKSES ===")
                 else:
-                    print("[Error] Fallback gagal/tidak merespon. Menggunakan teks asli.")
+                    print("[Error] Semua API (Utama, Fallback 1, Fallback 2) gagal merespon. Menggunakan teks asli.")
                     translations = batch
 
             all_translations.extend(translations)

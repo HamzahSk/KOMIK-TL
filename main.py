@@ -223,6 +223,14 @@ def translate_comic(input_path, output_path, ocr, translator, font_path):
     blocks = ocr.detect_and_merge(input_path)
     if not blocks: return False
     
+    # --- LOGIKA SKIP 1 KELOMPOK & 1 KATA ---
+    if len(blocks) == 1:
+        teks = blocks[0]['text']
+        # .split() memecah string berdasarkan spasi. Jika hasilnya <= 1, berarti cuma 1 kata.
+        if len(teks.split()) <= 1:
+            return False
+    # ---------------------------------------
+    
     translations = translator.translate_batch([b['text'] for b in blocks])
     for i, b in enumerate(blocks):
         b['translated_text'] = translations[i] if i < len(translations) else b['text']
@@ -232,6 +240,7 @@ def translate_comic(input_path, output_path, ocr, translator, font_path):
     
     final_img.save(output_path, format="WEBP", quality=80)
     return True
+
 
 # --- 1. Fungsi Mengunduh Saja ---
 def download_page(page, out_dir):
