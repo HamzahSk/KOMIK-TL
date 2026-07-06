@@ -18,20 +18,49 @@ class OCREngine:
         self.reader = easyocr.Reader(['en'], gpu=False)
 
     def detect_and_merge(self, img_path):
-        result = self.reader.readtext(img_path)
+        # 1. Buka dan pre-process gambar
+        img = cv2.imread(img_path)
+        if img is None: return []
+        
+        # Upscale gambar 2x lipat agar teks kecil lebih tajam
+        img_resized = cv2.resize(img, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+        
+        # Ubah ke Grayscale (Hitam Putih)
+        gray = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
+
+        # 2. Baca dengan EasyOCR (menggunakan gambar yang sudah di-upscale)
+        result = self.reader.readtext(gray)
         if not result: return []
         
         raw_lines = []
         for bbox, text, conf in result:
-            xs = [p[0] for p in bbox]
-            ys = [p[1] for p in bbox]
-            raw_lines.append({
-                "text": text,
-                "box": [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))]
-            })
+            # Kembalikan koordinat bounding box ke skala asli (dibagi 2)
+            xs = [p[0] / 2.0 for p in bbox]
+            ys = [p[1] / 2.0 for p in bbox]
             
+            # 3. Post-processing: Perbaiki kesalahan baca OCR umum
+            # (Silakan tambah replace lain di sini kalau nemu pola error baru)
+            fixed_text = text.replace('|', 'I')
+            fixed_text = fixed_text.replace('[', 'I').replace(']', 'I')
+            fixed_text = fixed_text.replace('{', 'I').replace('}', 'I')
+            
+            # Jadikan huruf besar semua agar seragam
+            fixed_text = fixed_text.upper()
+            
+            # Bersihkan dengan Regex yang LEBIH AMAN (sisakan tanda baca esensial)
+            clean_text = re.sub(r'[^A-Z0-9\s.,!?\'"~-]', '', fixed_text).strip() 
+            
+            # Rapikan spasi yang berlebihan (misal: "HELLO   WORLD" jadi "HELLO WORLD")
+            clean_text = re.sub(r'\s+', ' ', clean_text)
+            
+            if clean_text: # Pastikan teks tidak menjadi kosong
+                raw_lines.append({
+                    "text": clean_text,
+                    "box": [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))]
+                })
+                
         return self._merge_dialog_bubbles(raw_lines)
-
+        
     def _merge_dialog_bubbles(self, lines):
         if not lines: return []
         lines.sort(key=lambda item: item['box'][1])
