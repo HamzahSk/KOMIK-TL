@@ -7,7 +7,6 @@ import zipfile
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-# Mengganti easyocr dengan komponen RapidOCR
 from rapidocr import EngineType, LangDet, LangRec, ModelType, OCRVersion, RapidOCR
 
 import config
@@ -42,40 +41,55 @@ class OCREngine:
         gray = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
 
         # 2. Baca dengan RapidOCR 
-        result = self.reader(gray)
-        if not result: return []
+        out = self.reader(gray)
+        if not out: return []
         
-        # Penyesuaian struktur data output RapidOCR
-        iterable_result = result[0] if isinstance(result, tuple) else result
-        if not iterable_result: return []
-
         raw_lines = []
-        for item in iterable_result:
-            # Pastikan item memiliki setidaknya bounding box dan teks
-            if len(item) < 2: continue
-            
-            bbox = item[0]
-            text = item[1]
+        boxes, texts = [], []
+
+        # --- FASE EKSTRAKSI DATA DARI OBJEK RAPIDOCR ---
+        if isinstance(out, (tuple, list)):
+            # Fallback jika ternyata membaca output ala versi lama
+            iterable_result = out[0] if isinstance(out, tuple) else out
+            for item in iterable_result:
+                if len(item) >= 2:
+                    boxes.append(item[0])
+                    texts.append(item[1])
+        else:
+            # Membongkar objek RapidOCROutput (v3.9.1+)
+            # Mengecek berbagai kemungkinan struktur property yang ada di dalam objek
+            if hasattr(out, 'boxes') and hasattr(out, 'txts'):
+                boxes, texts = out.boxes, out.txts
+            elif hasattr(out, 'dt_boxes') and hasattr(out, 'rec_res'):
+                boxes = out.dt_boxes
+                # rec_res biasanya bentuk tuple ('teks', score)
+                texts = [res[0] if isinstance(res, (tuple, list)) else res for res in out.rec_res]
+            else:
+                # Kalau format list dibungkus ke dalam nama properti lain
+                raw_list = getattr(out, 'result', getattr(out, 'res', getattr(out, 'ocr_res', [])))
+                for item in raw_list:
+                    if isinstance(item, (list, tuple)) and len(item) >= 2:
+                        boxes.append(item[0])
+                        texts.append(item[1])
+
+        # --- FASE POST-PROCESSING ---
+        for bbox, text in zip(boxes, texts):
+            # Pastikan bounding box valid
+            if not bbox or len(bbox) < 4: continue
             
             # Kembalikan koordinat bounding box ke skala asli (dibagi 2)
             xs = [p[0] / 2.0 for p in bbox]
             ys = [p[1] / 2.0 for p in bbox]
             
-            # 3. Post-processing: Perbaiki kesalahan baca OCR umum
-            fixed_text = text.replace('|', 'I')
-            fixed_text = fixed_text.replace('[', 'I').replace(']', 'I')
-            fixed_text = fixed_text.replace('{', 'I').replace('}', 'I')
-            
-            # Jadikan huruf besar semua agar seragam
+            # Post-processing teks
+            fixed_text = text.replace('|', 'I').replace('[', 'I').replace(']', 'I').replace('{', 'I').replace('}', 'I')
             fixed_text = fixed_text.upper()
             
-            # Bersihkan dengan Regex yang LEBIH AMAN (sisakan tanda baca esensial)
+            # Bersihkan karakter
             clean_text = re.sub(r'[^A-Z0-9\s.,!?\'"~-]', '', fixed_text).strip() 
-            
-            # Rapikan spasi yang berlebihan
             clean_text = re.sub(r'\s+', ' ', clean_text)
             
-            if clean_text: # Pastikan teks tidak menjadi kosong
+            if clean_text: 
                 raw_lines.append({
                     "text": clean_text,
                     "box": [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))]
