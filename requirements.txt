@@ -1,4 +1,5 @@
-rapidocr_onnxruntime
+paddlepaddle
+paddleocr
 opencv-python-headless
 pillow
 numpy<2
