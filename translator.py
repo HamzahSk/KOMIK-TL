@@ -69,6 +69,7 @@ class AiTranslator:
             print(f"[Batch {batch_idx+1}/{len(batches)}] Menerjemahkan {len(batch)} teks via OnChatbot...")
             try:
                 user_message = self._format_batch_text(batch)
+                print(user_message)
                 
                 # Menyiapkan Form Data sesuai struktur JS
                 payload = {
