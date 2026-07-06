@@ -7,107 +7,60 @@ import zipfile
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import easyocr
-from spellchecker import SpellChecker
 
 import config
 from scraper import get_chapter_list, get_page_list
 from translator import AiTranslator 
 
 class OCREngine:
-    # Baris hasil OCR dengan confidence di bawah ini biasanya cuma noise/simbol
-    # nyasar (sfx, screentone, dsb), bukan teks dialog beneran -> dibuang.
-    MIN_CONFIDENCE = 0.35
-    # Upscale gambar sebelum di-OCR. Huruf kecil/anti-aliased di komik jauh
-    # lebih gampang dibedakan (u vs n, l vs I vs 1) kalau resolusinya dibesarkan.
-    UPSCALE_FACTOR = 2
-
-    # Tambahkan nama karakter/istilah khusus manga kamu di sini biar tidak
-    # ikut "dikoreksi" jadi kata lain oleh spellchecker.
-    CUSTOM_DICTIONARY = []
-
     def __init__(self):
         # Setting default bahasa ke Inggris ('en'). Bisa ditambah misal ['en', 'id']
         self.reader = easyocr.Reader(['en'], gpu=False)
-        self.spell = SpellChecker()
-        if self.CUSTOM_DICTIONARY:
-            self.spell.word_frequency.load_words(
-                [w.lower() for w in self.CUSTOM_DICTIONARY]
-            )
-
-    @classmethod
-    def _preprocess(cls, img_path):
-        img = cv2.imread(img_path)
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-        # Ratakan kontras lokal biar teks pudar/anti-aliased lebih tegas
-        clahe = cv2.createCLAHE(clipLimit=2.5, tileGridSize=(8, 8))
-        gray = clahe.apply(gray)
-        # Upscale supaya bentuk huruf tidak ambigu buat modelnya
-        gray = cv2.resize(gray, None, fx=cls.UPSCALE_FACTOR, fy=cls.UPSCALE_FACTOR,
-                           interpolation=cv2.INTER_CUBIC)
-        # Denoise ringan tanpa ngilangin ketajaman tepi huruf
-        gray = cv2.bilateralFilter(gray, 5, 50, 50)
-        return gray
 
     def detect_and_merge(self, img_path):
-        scale = self.UPSCALE_FACTOR
-        processed = self._preprocess(img_path)
+        # 1. Buka dan pre-process gambar
+        img = cv2.imread(img_path)
+        if img is None: return []
+        
+        # Upscale gambar 2x lipat agar teks kecil lebih tajam
+        img_resized = cv2.resize(img, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+        
+        # Ubah ke Grayscale (Hitam Putih)
+        gray = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
 
-        result = self.reader.readtext(
-            processed,
-            contrast_ths=0.1,
-            adjust_contrast=0.6,
-            text_threshold=0.65,
-            low_text=0.35,
-            mag_ratio=1.0,          # sudah di-upscale manual di _preprocess
-            decoder='beamsearch',   # lebih akurat dari greedy, sedikit lebih lambat
-            beamWidth=5,
-        )
+        # 2. Baca dengan EasyOCR (menggunakan gambar yang sudah di-upscale)
+        result = self.reader.readtext(gray)
         if not result: return []
-
+        
         raw_lines = []
         for bbox, text, conf in result:
-            if conf < self.MIN_CONFIDENCE or not text.strip():
-                continue  # buang noise/simbol hasil salah baca
-            xs = [p[0] / scale for p in bbox]
-            ys = [p[1] / scale for p in bbox]
-            raw_lines.append({
-                "text": self._fix_text(text),
-                "box": [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))]
-            })
-
-        if not raw_lines: return []
+            # Kembalikan koordinat bounding box ke skala asli (dibagi 2)
+            xs = [p[0] / 2.0 for p in bbox]
+            ys = [p[1] / 2.0 for p in bbox]
+            
+            # 3. Post-processing: Perbaiki kesalahan baca OCR umum
+            # (Silakan tambah replace lain di sini kalau nemu pola error baru)
+            fixed_text = text.replace('|', 'I')
+            fixed_text = fixed_text.replace('[', 'I').replace(']', 'I')
+            fixed_text = fixed_text.replace('{', 'I').replace('}', 'I')
+            
+            # Jadikan huruf besar semua agar seragam
+            fixed_text = fixed_text.upper()
+            
+            # Bersihkan dengan Regex yang LEBIH AMAN (sisakan tanda baca esensial)
+            clean_text = re.sub(r'[^A-Z0-9\s.,!?\'"~-]', '', fixed_text).strip() 
+            
+            # Rapikan spasi yang berlebihan (misal: "HELLO   WORLD" jadi "HELLO WORLD")
+            clean_text = re.sub(r'\s+', ' ', clean_text)
+            
+            if clean_text: # Pastikan teks tidak menjadi kosong
+                raw_lines.append({
+                    "text": clean_text,
+                    "box": [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))]
+                })
+                
         return self._merge_dialog_bubbles(raw_lines)
 
-    def _fix_text(self, text):
-        """Bersihkan simbol nyasar dan perbaiki salah-baca ringan per kata
-        (mis. 'wl1I' -> 'will') tanpa merusak pola huruf besar/kecil asli."""
-        # Buang karakter yang jelas bukan bagian teks dialog normal
-        text = re.sub(r"[^A-Za-z0-9'\",.!?\-:; ]", '', text)
-        text = re.sub(r'\s{2,}', ' ', text).strip()
-        if not text:
-            return text
-
-        fixed_words = []
-        for word in text.split(' '):
-            core = re.sub(r'[^A-Za-z]', '', word)
-            # Kata pendek (<3 huruf) rawan false-positive kalau dikoreksi
-            # (mis. "Ok", "No"), jadi dibiarkan apa adanya.
-            if len(core) < 3 or self.spell.known([core.lower()]):
-                fixed_words.append(word)
-                continue
-
-            candidate = self.spell.correction(core.lower())
-            if candidate and candidate != core.lower():
-                if core.isupper():
-                    replacement = candidate.upper()
-                elif core[0].isupper():
-                    replacement = candidate.capitalize()
-                else:
-                    replacement = candidate
-                word = word.replace(core, replacement)
-            fixed_words.append(word)
-
-        return ' '.join(fixed_words)
 
     def _merge_dialog_bubbles(self, lines):
         if not lines: return []
@@ -174,7 +127,7 @@ class Typesetter:
             while font_size > 6:
                 font = ImageFont.truetype(font_path, font_size) if os.path.exists(font_path) else ImageFont.load_default()
                 lines, current_line = [], []
-                for word in block.get('translated_text', block['text']).split():
+                for word in block.get('translated_text', block['text']).upper().split():
                     test_line = ' '.join(current_line + [word]) if current_line else word
                     if draw.textbbox((0, 0), test_line, font=font)[2] <= bw * 0.95:
                         current_line.append(word)
@@ -220,7 +173,8 @@ def translate_comic(input_path, output_path, ocr, translator, font_path):
         b['colors'] = ImageProcessor.detect_colors(img, b['box'])
         
     final_img = Typesetter.apply_text(img, blocks, font_path)
-    cv2.imwrite(output_path, final_img)
+    
+    cv2.imwrite(output_path, final_img, [int(cv2.IMWRITE_WEBP_QUALITY), 80])
     return True
 
 def main():
@@ -265,7 +219,7 @@ def main():
         for page in pages:
             idx = page['index']
             raw_path = os.path.join(out_dir, f"raw_{idx}.jpg")
-            final_path = os.path.join(out_dir, f"terjemahan_{idx}.jpg")
+            final_path = os.path.join(out_dir, f"terjemahan_{idx}.webp")
             
             print(f"Halaman {idx} -> Mengunduh...")
             if download_image(page['imageUrl'], raw_path):
