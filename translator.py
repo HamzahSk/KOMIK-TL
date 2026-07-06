@@ -69,9 +69,8 @@ class AiTranslator:
     def _format_batch_text(self, batch_texts):
         return (
             f"INSTRUCTION: {self.instruction}\n\n"
-            "Berikut hasil OCR yang mungkin memiliki kata yang menempel. "
-            "Sebagai penerjemah komik profesional, terjemahkan dialog berikut ke bahasa Indonesia percakapan yang natural dan mengalir. "
-            f"ATURAN MUTLAK: Pisahkan tiap baris terjemahan HANYA dengan {self.SEPARATOR}. Dilarang keras menambah penjelasan, basa-basi, atau awalan angka.\n\n"
+            f"ATURAN MUTLAK: Pisahkan tiap baris terjemahan HANYA dengan {self.SEPARATOR}. Dilarang keras menambah penjelasan, basa-basi, atau awalan angka."
+            f"Berikut teks nya: \n\n"
             + f"\n{self.SEPARATOR}\n".join(batch_texts)
         )
 
