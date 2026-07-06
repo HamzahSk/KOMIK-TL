@@ -1,6 +1,7 @@
 # main.py
 import os
 import cv2
+import re
 import requests
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
