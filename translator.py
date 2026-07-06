@@ -116,6 +116,7 @@ class AiTranslator:
         for batch_idx, batch in enumerate(batches):
             print(f"\n[Batch {batch_idx+1}/{len(batches)}] Menerjemahkan {len(batch)} teks...")
             user_message = self._format_batch_text(batch)
+            print(user_message)
             translations = []
             
             try:
