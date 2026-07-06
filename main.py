@@ -57,15 +57,12 @@ class OCREngine:
                     texts.append(item[1])
         else:
             # Membongkar objek RapidOCROutput (v3.9.1+)
-            # Mengecek berbagai kemungkinan struktur property yang ada di dalam objek
             if hasattr(out, 'boxes') and hasattr(out, 'txts'):
                 boxes, texts = out.boxes, out.txts
             elif hasattr(out, 'dt_boxes') and hasattr(out, 'rec_res'):
                 boxes = out.dt_boxes
-                # rec_res biasanya bentuk tuple ('teks', score)
                 texts = [res[0] if isinstance(res, (tuple, list)) else res for res in out.rec_res]
             else:
-                # Kalau format list dibungkus ke dalam nama properti lain
                 raw_list = getattr(out, 'result', getattr(out, 'res', getattr(out, 'ocr_res', [])))
                 for item in raw_list:
                     if isinstance(item, (list, tuple)) and len(item) >= 2:
@@ -74,8 +71,8 @@ class OCREngine:
 
         # --- FASE POST-PROCESSING ---
         for bbox, text in zip(boxes, texts):
-            # Pastikan bounding box valid
-            if not bbox or len(bbox) < 4: continue
+            # Pastikan bounding box valid (PERBAIKAN ERROR NUMPY DI SINI)
+            if bbox is None or len(bbox) < 4: continue
             
             # Kembalikan koordinat bounding box ke skala asli (dibagi 2)
             xs = [p[0] / 2.0 for p in bbox]
