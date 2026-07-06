@@ -5,7 +5,7 @@ import requests
 
 class AiTranslator:
     def __init__(self):
-        self.api_url = 'https://onlinechatbot.ai/wp-admin/admin-ajax.php'
+        self.api_url = 'http://93.115.101.150:11584/proxy?url=https://onlinechatbot.ai/wp-admin/admin-ajax.php'
         # CATATAN: Nonce ini dari WordPress dan bisa kedaluwarsa (biasanya per 12-24 jam).
         # Jika sewaktu-waktu error 400/403, perbarui nonce ini dari website aslinya.
         self.nonce = 'e82bmm7cf5'

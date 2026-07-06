@@ -1,3 +1,3 @@
 # config.py
-URLMANGA = ["https://vymanga.net/manga/the-princess-goes-to-the-gym"] 
-URLCHAPTER = [""] 
+URLMANGA = [""] 
+URLCHAPTER = ["https://vymanga.net/read/the-princess-goes-to-the-gym/3253014"] 
