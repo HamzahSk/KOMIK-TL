@@ -145,20 +145,32 @@ def main():
     os.makedirs("output", exist_ok=True)
     all_targets = []
 
+    # 1. Ambil dari URL Manga (ini akan dapat URL + Nama Chapter)
     for m_url in mangas:
         print(f"\n[Scraper] Mendapatkan daftar chapter dari: {m_url}")
         for ch in get_chapter_list(m_url):
-            all_targets.append(ch['url'])
+            all_targets.append(ch)
             
-    all_targets.extend(chapters)
-    all_targets = list(set(all_targets)) 
+    # 2. Ambil dari URL Chapter spesifik (karena tidak di-scrape dari awal, kita buat fallback namanya)
+    for c_url in chapters:
+        # Cek agar tidak duplikat
+        if not any(t['url'] == c_url for t in all_targets):
+            clean_url = c_url.split('?')[0]
+            parts = [p for p in clean_url.split('/') if p]
+            fallback_name = f"{parts[-2]}_{parts[-1]}" if len(parts) >= 2 else parts[-1]
+            all_targets.append({'url': c_url, 'name': fallback_name})
 
     ocr = OCREngine()
     translator = AiTranslator()
 
-    for ch_url in all_targets:
-        parts = [p for p in ch_url.split('/') if p]
-        folder_name = f"{parts[-2]}_{parts[-1]}" if len(parts) >= 2 else parts[-1]
+    # 3. Proses pengunduhan
+    for target in all_targets:
+        ch_url = target['url']
+        raw_name = target['name']
+        
+        # Bersihkan nama folder dari karakter yang dilarang OS (seperti : / \ ? * dll)
+        folder_name = re.sub(r'[^a-zA-Z0-9_\-\s]', '_', raw_name).strip()[:100]
+        
         out_dir = os.path.join("output", folder_name)
         os.makedirs(out_dir, exist_ok=True)
         
@@ -174,7 +186,8 @@ def main():
             if download_image(page['imageUrl'], raw_path):
                 print(f"Halaman {idx} -> Scanning & Translate...")
                 if translate_comic(raw_path, final_path, ocr, translator):
-                    os.remove(raw_path) 
+                    if os.path.exists(raw_path):
+                        os.remove(raw_path) 
                     print(f"Halaman {idx} -> Selesai!")
                 else:
                     print(f"Halaman {idx} -> Dilewati (Tidak ada teks/Error)")

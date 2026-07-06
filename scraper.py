@@ -9,7 +9,6 @@ HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/
 
 def get_chapter_list(manga_url):
     try:
-        # Menambahkan CORS proxy di depan URL target
         target_url = f"{CORS_PROXY}{manga_url}"
         res = requests.get(target_url, headers=HEADERS, timeout=15)
         soup = BeautifulSoup(res.text, 'html.parser')
@@ -17,9 +16,14 @@ def get_chapter_list(manga_url):
         chapters = []
         for a in soup.select('.list-group > a'):
             href = a.get('href')
+            span = a.find('span')
+            name = span.text.strip() if span else "Unknown_Chapter"
+            
             if href:
-                # Pastikan URL yang disimpan adalah URL aslinya (bukan URL proxy)
-                chapters.append({'url': urljoin(BASE_URL, href)})
+                chapters.append({
+                    'url': urljoin(BASE_URL, href),
+                    'name': name
+                })
         return chapters
     except Exception as e:
         print(f"[Error] Gagal mengambil detail manga: {e}")
