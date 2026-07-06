@@ -25,13 +25,13 @@ jobs:
           python-version: "3.10"
           cache: "pip"
 
-      # Cache model OCR & cache Python
+      # Cache model OCR untuk EasyOCR
       - name: Cache OCR Models
         uses: actions/cache@v4
         with:
           path: |
             ~/.cache
-            ~/.rapidocr
+            ~/.EasyOCR
           key: ocr-cache-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
           restore-keys: |
             ocr-cache-${{ runner.os }}-

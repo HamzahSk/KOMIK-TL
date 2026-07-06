@@ -1,4 +1,4 @@
-rapidocr_onnxruntime
+easyocr
 opencv-python
 pillow
 numpy<2

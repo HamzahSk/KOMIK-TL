@@ -6,7 +6,7 @@ import requests
 import zipfile
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-from rapidocr_onnxruntime import RapidOCR
+import easyocr
 
 import config
 from scraper import get_chapter_list, get_page_list
@@ -14,12 +14,22 @@ from translator import AiTranslator
 
 class OCREngine:
     def __init__(self):
-        self.ocr = RapidOCR()
+        # Setting default bahasa ke Inggris ('en'). Bisa ditambah misal ['en', 'id']
+        self.reader = easyocr.Reader(['en'], gpu=False)
 
     def detect_and_merge(self, img_path):
-        result, _ = self.ocr(img_path)
+        result = self.reader.readtext(img_path)
         if not result: return []
-        raw_lines = [{"text": l[1], "box": [int(min([p[0] for p in l[0]])), int(min([p[1] for p in l[0]])), int(max([p[0] for p in l[0]])), int(max([p[1] for p in l[0]]))]} for l in result]
+        
+        raw_lines = []
+        for bbox, text, conf in result:
+            xs = [p[0] for p in bbox]
+            ys = [p[1] for p in bbox]
+            raw_lines.append({
+                "text": text,
+                "box": [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))]
+            })
+            
         return self._merge_dialog_bubbles(raw_lines)
 
     def _merge_dialog_bubbles(self, lines):
@@ -140,9 +150,6 @@ def main():
     mangas = [u for u in config.URLMANGA if u.strip()]
     chapters = [u for u in config.URLCHAPTER if u.strip()]
     
-    # === PENGATURAN FONT ===
-    # Kamu bisa menambahkan FONT_PATH = "nama_font.ttf" di config.py
-    # Jika tidak ada, script akan mencari "arial.ttf" atau fallback ke default
     font_path = getattr(config, 'FONT_PATH', 'arial.ttf')
     
     if not mangas and not chapters:
@@ -152,13 +159,11 @@ def main():
     os.makedirs("output", exist_ok=True)
     all_targets = []
 
-    # 1. Ambil dari URL Manga
     for m_url in mangas:
         print(f"\n[Scraper] Mendapatkan daftar chapter dari: {m_url}")
         for ch in get_chapter_list(m_url):
             all_targets.append(ch)
             
-    # 2. Ambil dari URL Chapter spesifik
     for c_url in chapters:
         if not any(t['url'] == c_url for t in all_targets):
             clean_url = c_url.split('?')[0]
@@ -169,7 +174,6 @@ def main():
     ocr = OCREngine()
     translator = AiTranslator()
 
-    # 3. Proses pengunduhan
     for target in all_targets:
         ch_url = target['url']
         raw_name = target['name']
@@ -189,7 +193,6 @@ def main():
             print(f"Halaman {idx} -> Mengunduh...")
             if download_image(page['imageUrl'], raw_path):
                 print(f"Halaman {idx} -> Scanning & Translate...")
-                # Mengoper font_path ke fungsi translate_comic
                 if translate_comic(raw_path, final_path, ocr, translator, font_path):
                     if os.path.exists(raw_path):
                         os.remove(raw_path) 
@@ -197,19 +200,16 @@ def main():
                 else:
                     print(f"Halaman {idx} -> Dilewati (Tidak ada teks/Error)")
                     
-        # 4. Membuat file CBZ setelah satu chapter selesai diproses
         cbz_path = os.path.join("output", f"{folder_name}.cbz")
         print(f"\nMengarsipkan ke: {cbz_path}...")
         
         with zipfile.ZipFile(cbz_path, 'w', zipfile.ZIP_DEFLATED) as cbz_file:
             for file_name in os.listdir(out_dir):
                 file_path = os.path.join(out_dir, file_name)
-                # Hanya masukkan file gambar terjemahan ke dalam archive
                 if os.path.isfile(file_path):
                     cbz_file.write(file_path, arcname=file_name)
-                    os.remove(file_path) # Hapus gambar aslinya setelah masuk ke CBZ
+                    os.remove(file_path)
                     
-        # Hapus folder chapter yang sekarang sudah kosong
         try:
             os.rmdir(out_dir)
         except OSError:
