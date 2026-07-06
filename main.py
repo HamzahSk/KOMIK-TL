@@ -233,7 +233,7 @@ def translate_comic(input_path, output_path, ocr, translator, font_path):
     final_img.save(output_path, format="WEBP", quality=80)
     return True
 
-# --- 1. Fungsi Baru: Mengunduh Saja ---
+# --- 1. Fungsi Mengunduh Saja ---
 def download_page(page, out_dir):
     idx = page['index']
     raw_path = os.path.join(out_dir, f"raw_{idx}.jpg")
@@ -241,76 +241,107 @@ def download_page(page, out_dir):
         return raw_path
     return None
 
-# --- 2. Fungsi Baru: Menggabungkan Gambar yang Pendek ---
-def merge_short_images(raw_paths, target_height=2200):
-    merged_paths = []
-    if not raw_paths: return merged_paths
-
-    current_group = []
+# --- 2a. Fungsi Proses Gabung Per Grup ---
+def process_merge_group(group_data, merge_idx, out_dir, target_width):
     current_height = 0
-    target_width = None
-    merge_idx = 1
-
-    out_dir = os.path.dirname(raw_paths[0])
-
-    for path in raw_paths:
+    images_to_paste = []
+    
+    # Buka dan sesuaikan ukuran gambar di grup ini
+    for path, w, h in group_data:
         try:
             img = Image.open(path).convert("RGB")
+            if img.width != target_width:
+                new_h = int(img.height * (target_width / img.width))
+                img = img.resize((target_width, new_h), Image.Resampling.LANCZOS)
+            images_to_paste.append(img)
+            current_height += img.height
         except Exception:
             continue
-
-        # Jadikan lebar gambar pertama di grup ini sebagai patokan
-        if target_width is None:
-            target_width = img.width
-
-        # Sesuaikan lebar jika beda piksel sedikit agar menyatu mulus
-        if img.width != target_width:
-            new_h = int(img.height * (target_width / img.width))
-            img = img.resize((target_width, new_h), Image.Resampling.LANCZOS)
-
-        current_group.append((img, path))
-        current_height += img.height
-
-        # Jika sudah mencapai atau melampaui target height, gabungkan
-        if current_height >= target_height:
-            merged_img = Image.new('RGB', (target_width, current_height))
-            y_offset = 0
-            for im, orig_path in current_group:
-                merged_img.paste(im, (0, y_offset))
-                y_offset += im.height
-
-            new_path = os.path.join(out_dir, f"merged_raw_{merge_idx}.jpg")
-            merged_img.save(new_path, format="JPEG", quality=95)
-            merged_paths.append(new_path)
-            merge_idx += 1
-
-            # Reset grup untuk gambar berikutnya
-            current_group = []
-            current_height = 0
-            target_width = None
-
-    # Simpan sisa gambar jika masih ada
-    if current_group:
-        merged_img = Image.new('RGB', (target_width, current_height))
-        y_offset = 0
-        for im, orig_path in current_group:
-            merged_img.paste(im, (0, y_offset))
-            y_offset += im.height
-        new_path = os.path.join(out_dir, f"merged_raw_{merge_idx}.jpg")
-        merged_img.save(new_path, format="JPEG", quality=95)
-        merged_paths.append(new_path)
-
-    # Hapus gambar raw asli karena sudah digabungkan
-    for path in raw_paths:
+            
+    if not images_to_paste:
+        return None
+        
+    # Gabungkan gambar
+    merged_img = Image.new('RGB', (target_width, current_height))
+    y_offset = 0
+    for im in images_to_paste:
+        merged_img.paste(im, (0, y_offset))
+        y_offset += im.height
+        
+    new_path = os.path.join(out_dir, f"merged_raw_{str(merge_idx).zfill(3)}.jpg")
+    merged_img.save(new_path, format="JPEG", quality=95)
+    
+    # Hapus gambar raw asli yang sudah digabung
+    for path, _, _ in group_data:
         if os.path.exists(path):
             try:
                 os.remove(path)
             except OSError:
                 pass
+                
+    return new_path
 
+# --- 2b. Fungsi Utama Penggabungan Gambar Pendek (Paralel) ---
+def merge_short_images(raw_paths, target_height=2200, max_workers=6):
+    if not raw_paths: return []
+    
+    # 1. Ngintip dimensi gambar secara berurutan (Sangat Cepat)
+    img_infos = []
+    for path in raw_paths:
+        try:
+            with Image.open(path) as img:
+                img_infos.append((path, img.width, img.height))
+        except Exception:
+            pass
+            
+    if not img_infos: return []
+    
+    # 2. Tentukan grup-grup gambar
+    groups = []
+    current_group = []
+    current_h = 0
+    target_w = img_infos[0][1] # Patokan lebar dari gambar pertama
+    
+    for info in img_infos:
+        path, w, h = info
+        est_h = int(h * (target_w / w)) if w != target_w else h
+        
+        current_group.append(info)
+        current_h += est_h
+        
+        if current_h >= target_height:
+            groups.append(current_group)
+            current_group = []
+            current_h = 0
+            
+    if current_group: # Masukkan sisa gambar ke grup terakhir
+        groups.append(current_group)
+        
+    # 3. Proses penggabungan tiap grup secara PARALEL
+    out_dir = os.path.dirname(raw_paths[0])
+    merged_paths = []
+    
+    print(f"Mengeksekusi penggabungan {len(groups)} grup gambar secara paralel...")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+        future_to_idx = {
+            executor.submit(process_merge_group, grp, idx+1, out_dir, target_w): idx+1
+            for idx, grp in enumerate(groups)
+        }
+        
+        results = {}
+        for future in concurrent.futures.as_completed(future_to_idx):
+            idx = future_to_idx[future]
+            res_path = future.result()
+            if res_path:
+                results[idx] = res_path
+                
+    # Urutkan berdasarkan index agar halamannya tidak acak saat di-OCR
+    for i in sorted(results.keys()):
+        merged_paths.append(results[i])
+        
     return merged_paths
 
-# --- 3. Fungsi Baru: Memproses Gambar Gabungan Lokal ---
+# --- 3. Fungsi Memproses Gambar Gabungan Lokal ---
 def process_local_image(input_path, out_dir, idx, ocr, translator, font_path):
     # Menyimpan hasil akhir dalam bentuk WEBP 
     # (Penomoran dibantu dengan zfill agar urut di folder zip, misal 01, 02, 03)
@@ -399,7 +430,7 @@ def main():
         # FASE 2: Gabungkan Gambar yang Terlalu Pendek
         # ==========================================
         print("Mengecek dimensi & menggabungkan gambar-gambar yang pendek...")
-        merged_paths = merge_short_images(raw_paths, target_height=2200)
+        merged_paths = merge_short_images(raw_paths, target_height=2200, max_workers=6)
 
         # ==========================================
         # FASE 3: Proses OCR pada Gambar Gabungan
