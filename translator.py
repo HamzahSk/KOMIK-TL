@@ -139,32 +139,45 @@ class AiTranslator:
                     raise ValueError(f"API OnChatbot merespon gagal: {data}")
                     
                 ai_response = data.get('data', '')
+                
+                # Ekstrak hasil API Utama
+                translations = self._extract_translations(ai_response)
+                
+                # Cek apakah selaras
+                if len(translations) != len(batch):
+                    # Coba pembersihan ekstra
+                    raw_lines = [line.strip() for line in ai_response.split('\n') if line.strip() and self.SEPARATOR not in line]
+                    if len(raw_lines) == len(batch):
+                        translations = [self._clean_part(l) for l in raw_lines]
+                    else:
+                        # JIKA MASIH GAGAL, PAKSA ERROR AGAR MASUK KE FALLBACK
+                        raise ValueError(f"Format teks dari API Utama berantakan ({len(translations)} terjemahan vs {len(batch)} asli)")
+                
                 print("=== RESPON UTAMA SUKSES ===")
                 
             except Exception as e:
-                # 2. Jika Gagal, jalankan Fallback (DeepSeek)
-                print(f"[Warning] API Utama Gagal ({e}). Beralih ke Fallback...")
+                # 2. Jika Gagal API atau Format Salah, jalankan Fallback (DeepSeek)
+                print(f"[Warning] API Utama Bermasalah ({e}). Beralih ke Fallback...")
                 ai_response = self._fallback_translate(user_message)
                 
                 if ai_response:
-                    print("=== RESPON FALLBACK SUKSES ===")
-                else:
-                    print("[Error] Kedua API gagal. Menggunakan teks asli untuk batch ini.")
-                    all_translations.extend(batch)
-                    continue
-
-            # 3. Ekstraksi hasil terjemahan dari respons
-            translations = self._extract_translations(ai_response)
-            
-            if len(translations) != len(batch):
-                print(f"[Warning] Jumlah terjemahan tidak selaras ({len(translations)} vs {len(batch)}). Mencoba pembersihan ekstra...")
-                raw_lines = [line.strip() for line in ai_response.split('\n') if line.strip() and self.SEPARATOR not in line]
-                if len(raw_lines) == len(batch):
-                    translations = [self._clean_part(l) for l in raw_lines]
-                else:
-                    print("[Warning] Pembersihan ekstra gagal. Menggunakan teks asli.")
-                    translations = batch
+                    # Ekstrak hasil Fallback
+                    translations = self._extract_translations(ai_response)
                     
+                    if len(translations) != len(batch):
+                        print(f"[Warning] Jumlah terjemahan Fallback tidak selaras ({len(translations)} vs {len(batch)}). Mencoba pembersihan ekstra...")
+                        raw_lines = [line.strip() for line in ai_response.split('\n') if line.strip() and self.SEPARATOR not in line]
+                        if len(raw_lines) == len(batch):
+                            translations = [self._clean_part(l) for l in raw_lines]
+                        else:
+                            print("[Error] Pembersihan ekstra Fallback gagal. Menggunakan teks asli.")
+                            translations = batch
+                    else:
+                        print("=== RESPON FALLBACK SUKSES ===")
+                else:
+                    print("[Error] Fallback gagal/tidak merespon. Menggunakan teks asli.")
+                    translations = batch
+
             all_translations.extend(translations)
             time.sleep(1.5)
                 
