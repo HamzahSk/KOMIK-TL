@@ -15,7 +15,7 @@ from translator import AiTranslator
 class OCREngine:
     def __init__(self):
         # Setting default bahasa ke Inggris ('en'). Bisa ditambah misal ['en', 'id']
-        self.reader = easyocr.Reader(['en'], gpu=False)
+        self.reader = easyocr.Reader(['en'], gpu=True)
 
     def detect_and_merge(self, img_path):
         # 1. Buka dan pre-process gambar
