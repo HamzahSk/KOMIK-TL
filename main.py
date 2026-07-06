@@ -3,13 +3,14 @@ import os
 import cv2
 import re
 import requests
+import zipfile
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 from rapidocr_onnxruntime import RapidOCR
 
 import config
 from scraper import get_chapter_list, get_page_list
-from translator import AiTranslator  # <--- Import dari file baru
+from translator import AiTranslator 
 
 class OCREngine:
     def __init__(self):
@@ -120,7 +121,7 @@ def download_image(url, save_path):
     except Exception: pass
     return False
 
-def translate_comic(input_path, output_path, ocr, translator):
+def translate_comic(input_path, output_path, ocr, translator, font_path):
     img = cv2.imread(input_path)
     if img is None: return False
     blocks = ocr.detect_and_merge(input_path)
@@ -131,13 +132,18 @@ def translate_comic(input_path, output_path, ocr, translator):
         b['translated_text'] = translations[i] if i < len(translations) else b['text']
         b['colors'] = ImageProcessor.detect_colors(img, b['box'])
         
-    final_img = Typesetter.apply_text(img, blocks)
+    final_img = Typesetter.apply_text(img, blocks, font_path)
     cv2.imwrite(output_path, final_img)
     return True
 
 def main():
     mangas = [u for u in config.URLMANGA if u.strip()]
     chapters = [u for u in config.URLCHAPTER if u.strip()]
+    
+    # === PENGATURAN FONT ===
+    # Kamu bisa menambahkan FONT_PATH = "nama_font.ttf" di config.py
+    # Jika tidak ada, script akan mencari "arial.ttf" atau fallback ke default
+    font_path = getattr(config, 'FONT_PATH', 'arial.ttf')
     
     if not mangas and not chapters:
         print("[System] URL kosong di config.py. Tidak ada yang diproses.")
@@ -146,15 +152,14 @@ def main():
     os.makedirs("output", exist_ok=True)
     all_targets = []
 
-    # 1. Ambil dari URL Manga (ini akan dapat URL + Nama Chapter)
+    # 1. Ambil dari URL Manga
     for m_url in mangas:
         print(f"\n[Scraper] Mendapatkan daftar chapter dari: {m_url}")
         for ch in get_chapter_list(m_url):
             all_targets.append(ch)
             
-    # 2. Ambil dari URL Chapter spesifik (karena tidak di-scrape dari awal, kita buat fallback namanya)
+    # 2. Ambil dari URL Chapter spesifik
     for c_url in chapters:
-        # Cek agar tidak duplikat
         if not any(t['url'] == c_url for t in all_targets):
             clean_url = c_url.split('?')[0]
             parts = [p for p in clean_url.split('/') if p]
@@ -169,9 +174,7 @@ def main():
         ch_url = target['url']
         raw_name = target['name']
         
-        # Bersihkan nama folder dari karakter yang dilarang OS (seperti : / \ ? * dll)
         folder_name = re.sub(r'[^a-zA-Z0-9_\-\s]', '_', raw_name).strip()[:100]
-        
         out_dir = os.path.join("output", folder_name)
         os.makedirs(out_dir, exist_ok=True)
         
@@ -186,12 +189,33 @@ def main():
             print(f"Halaman {idx} -> Mengunduh...")
             if download_image(page['imageUrl'], raw_path):
                 print(f"Halaman {idx} -> Scanning & Translate...")
-                if translate_comic(raw_path, final_path, ocr, translator):
+                # Mengoper font_path ke fungsi translate_comic
+                if translate_comic(raw_path, final_path, ocr, translator, font_path):
                     if os.path.exists(raw_path):
                         os.remove(raw_path) 
                     print(f"Halaman {idx} -> Selesai!")
                 else:
                     print(f"Halaman {idx} -> Dilewati (Tidak ada teks/Error)")
+                    
+        # 4. Membuat file CBZ setelah satu chapter selesai diproses
+        cbz_path = os.path.join("output", f"{folder_name}.cbz")
+        print(f"\nMengarsipkan ke: {cbz_path}...")
+        
+        with zipfile.ZipFile(cbz_path, 'w', zipfile.ZIP_DEFLATED) as cbz_file:
+            for file_name in os.listdir(out_dir):
+                file_path = os.path.join(out_dir, file_name)
+                # Hanya masukkan file gambar terjemahan ke dalam archive
+                if os.path.isfile(file_path):
+                    cbz_file.write(file_path, arcname=file_name)
+                    os.remove(file_path) # Hapus gambar aslinya setelah masuk ke CBZ
+                    
+        # Hapus folder chapter yang sekarang sudah kosong
+        try:
+            os.rmdir(out_dir)
+        except OSError:
+            print(f"[Warning] Tidak dapat menghapus folder sementara: {out_dir}")
+            
+        print(f"Sukses mengarsipkan {folder_name}.cbz!")
 
 if __name__ == "__main__":
     main()
