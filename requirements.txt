@@ -1,5 +1,5 @@
 rapidocr_onnxruntime
-opencv-python
+opencv-python-headless
 pillow
 numpy<2
 requests
