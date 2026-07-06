@@ -91,6 +91,8 @@ class AiTranslator:
                     continue
                     
                 ai_response = data.get('data', '')
+                print("\n=== RAW RESPONSE ===")
+                print(ai_response)
                 translations = self._extract_translations(ai_response)
                 
                 if len(translations) != len(batch):
