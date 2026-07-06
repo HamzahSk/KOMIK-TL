@@ -6,16 +6,20 @@ import requests
 import zipfile
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
-import easyocr
 
 import config
 from scraper import get_chapter_list, get_page_list
 from translator import AiTranslator 
 
+# Hapus 'import easyocr' di atas dan ganti dengan ini:
+from paddleocr import PaddleOCR
+
 class OCREngine:
     def __init__(self):
-        # Setting default bahasa ke Inggris ('en'). Bisa ditambah misal ['en', 'id']
-        self.reader = easyocr.Reader(['en'], gpu=True)
+        # Inisialisasi PaddleOCR
+        # use_gpu=False sangat penting agar aman jalan di CPU GitHub Actions
+        # lang='en' mencakup teks Inggris dan alfabet Indonesia
+        self.reader = PaddleOCR(use_angle_cls=False, lang='en', use_gpu=False, show_log=False)
 
     def detect_and_merge(self, img_path):
         # 1. Buka dan pre-process gambar
@@ -25,21 +29,30 @@ class OCREngine:
         # Upscale gambar 2x lipat agar teks kecil lebih tajam
         img_resized = cv2.resize(img, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
         
-        # Ubah ke Grayscale (Hitam Putih)
-        gray = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
+        # Catatan: PaddleOCR bekerja sangat baik dengan gambar BGR (berwarna)
+        # Jadi kita tidak perlu mengubahnya ke Grayscale seperti EasyOCR
 
-        # 2. Baca dengan EasyOCR (menggunakan gambar yang sudah di-upscale)
-        result = self.reader.readtext(gray)
-        if not result: return []
+        # 2. Baca dengan PaddleOCR
+        result = self.reader.ocr(img_resized, cls=False)
+        
+        # Jalur pengaman jika PaddleOCR tidak mendeteksi teks sama sekali
+        if not result or not result[0]: return []
         
         raw_lines = []
-        for bbox, text, conf in result:
+        # Hasil PaddleOCR berada di result[0] berupa list bersarang
+        for line in result[0]:
+            bbox = line[0]        # Koordinat 4 titik
+            text = line[1][0]     # Teks yang dibaca
+            conf = line[1][1]     # Skor keyakinan (akurasi)
+            
+            # Abaikan hasil yang akurasinya di bawah 40% (mencegah teks "halu")
+            if conf < 0.4: continue
+            
             # Kembalikan koordinat bounding box ke skala asli (dibagi 2)
             xs = [p[0] / 2.0 for p in bbox]
             ys = [p[1] / 2.0 for p in bbox]
             
             # 3. Post-processing: Perbaiki kesalahan baca OCR umum
-            # (Silakan tambah replace lain di sini kalau nemu pola error baru)
             fixed_text = text.replace('|', 'I')
             fixed_text = fixed_text.replace('[', 'I').replace(']', 'I')
             fixed_text = fixed_text.replace('{', 'I').replace('}', 'I')
@@ -47,20 +60,24 @@ class OCREngine:
             # Jadikan huruf besar semua agar seragam
             fixed_text = fixed_text.upper()
             
-            # Bersihkan dengan Regex yang LEBIH AMAN (sisakan tanda baca esensial)
+            # Bersihkan dengan Regex yang LEBIH AMAN
             clean_text = re.sub(r'[^A-Z0-9\s.,!?\'"~-]', '', fixed_text).strip() 
             
-            # Rapikan spasi yang berlebihan (misal: "HELLO   WORLD" jadi "HELLO WORLD")
+            # Rapikan spasi yang berlebihan
             clean_text = re.sub(r'\s+', ' ', clean_text)
             
-            if clean_text: # Pastikan teks tidak menjadi kosong
+            if clean_text:
                 raw_lines.append({
                     "text": clean_text,
                     "box": [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))]
                 })
                 
+        # Serahkan ke fungsi merge andalanmu
         return self._merge_dialog_bubbles(raw_lines)
 
+    # Biarkan fungsi _merge_dialog_bubbles tetap seperti aslinya di bawah ini...
+    # def _merge_dialog_bubbles(self, lines):
+    # ... (kode lama milikmu) ...
 
     def _merge_dialog_bubbles(self, lines):
         if not lines: return []
