@@ -1,0 +1,6 @@
+rapidocr_onnxruntime
+opencv-python
+pillow
+numpy<2
+requests
+beautifulsoup4
