@@ -29,7 +29,6 @@ class OCREngine:
         )
 
     def detect_and_merge(self, img_path):
-        # 1. Buka dan pre-process gambar menggunakan PIL murni
         try:
             img = Image.open(img_path).convert("RGB")
         except Exception:
@@ -39,17 +38,16 @@ class OCREngine:
         new_size = (img.width * 2, img.height * 2)
         img_resized = img.resize(new_size, Image.Resampling.BICUBIC)
         
-        # Ubah ke Grayscale (Hitam Putih) dan jadikan NumPy array untuk RapidOCR
+        # Ubah ke Grayscale (Hitam Putih)
         gray_np = np.array(img_resized.convert("L"))
 
-        # 2. Baca dengan RapidOCR 
         out = self.reader(gray_np)
         if not out: return []
         
         raw_lines = []
         boxes, texts = [], []
 
-        # --- FASE EKSTRAKSI DATA DARI OBJEK RAPIDOCR ---
+        # Ekstraksi Data RapidOCR
         if isinstance(out, (tuple, list)):
             iterable_result = out[0] if isinstance(out, tuple) else out
             for item in iterable_result:
@@ -69,10 +67,11 @@ class OCREngine:
                         boxes.append(item[0])
                         texts.append(item[1])
 
-        # --- FASE POST-PROCESSING ---
+        # Post-Processing
         for bbox, text in zip(boxes, texts):
             if bbox is None or len(bbox) < 4: continue
             
+            # Kembalikan koordinat ke ukuran asli (karena tadi di-upscale 2x)
             xs = [p[0] / 2.0 for p in bbox]
             ys = [p[1] / 2.0 for p in bbox]
             
@@ -107,8 +106,9 @@ class OCREngine:
                 prev_box = group_boxes[-1] 
                 min_h = min(prev_box[3] - prev_box[1], next_box[3] - next_box[1])
                 
-                is_vertically_close = (-min_h * 1.5) <= (next_box[1] - prev_box[3]) <= max(8, min_h * 0.8)
-                is_horizontally_aligned = (min(prev_box[2], next_box[2]) - max(prev_box[0], next_box[0])) > 0 and (abs((prev_box[0] + prev_box[2])/2 - (next_box[0] + next_box[2])/2) < max(prev_box[2] - prev_box[0], next_box[2] - next_box[0]) * 0.7)
+                # Toleransi diperketat agar teks yang beda konteks tidak mudah menyatu
+                is_vertically_close = (-min_h * 1.0) <= (next_box[1] - prev_box[3]) <= max(5, min_h * 0.5)
+                is_horizontally_aligned = (min(prev_box[2], next_box[2]) - max(prev_box[0], next_box[0])) > 0 and (abs((prev_box[0] + prev_box[2])/2 - (next_box[0] + next_box[2])/2) < max(prev_box[2] - prev_box[0], next_box[2] - next_box[0]) * 0.5)
                 
                 if (max(prev_box[3] - prev_box[1], next_box[3] - next_box[1]) / max(1, min_h) < 1.6) and is_vertically_close and is_horizontally_aligned:
                     combined_text.append(lines[j]['text'])
@@ -117,9 +117,10 @@ class OCREngine:
 
             min_x, min_y = min([b[0] for b in group_boxes]), min([b[1] for b in group_boxes])
             max_x, max_y = max([b[2] for b in group_boxes]), max([b[3] for b in group_boxes])
+            
             merged.append({
                 "text": " ".join(combined_text),
-                "box": [min_x - max(2, int((max_x - min_x) * 0.02)), min_y - max(2, int((max_y - min_y) * 0.02)), max_x + max(2, int((max_x - min_x) * 0.02)), max_y + max(2, int((max_y - min_y) * 0.02))],
+                "box": [min_x, min_y, max_x, max_y], # Padding tambahan dihapus agar background tidak kebesaran
                 "orig_line_height": sum([b[3] - b[1] for b in group_boxes]) / len(group_boxes)
             })
         return merged
@@ -127,14 +128,12 @@ class OCREngine:
 class ImageProcessor:
     @staticmethod
     def detect_colors(pil_img, box):
-        # Crop area dan ubah ke grayscale memakai PIL
         crop = pil_img.crop((max(0, box[0]), max(0, box[1]), min(pil_img.width, box[2]), min(pil_img.height, box[3])))
         gray_crop = crop.convert("L")
         
         if not gray_crop.getbbox(): 
             return (0, 0, 0), (255, 255, 255)
             
-        # Analisis warna dasar rata-rata
         if np.mean(np.array(gray_crop)) > 127: 
             return (0, 0, 0), (255, 255, 255)
         return (255, 255, 255), (0, 0, 0)
@@ -142,13 +141,13 @@ class ImageProcessor:
 class Typesetter:
     @staticmethod
     def apply_text(pil_img, text_blocks, font_path="arial.ttf"):
-        # Hapus konversi cv2, langsung mainkan objek PIL Image
         overlay = Image.new('RGBA', pil_img.size, (0, 0, 0, 0))
         draw_overlay = ImageDraw.Draw(overlay)
         
         for block in text_blocks:
             box = block['box']
-            draw_overlay.rounded_rectangle(box, radius=int(min(box[2]-box[0], box[3]-box[1]) * 0.25), fill=(255, 255, 255, 235))
+            # Background dibuat lebih ngepas dengan box asli
+            draw_overlay.rounded_rectangle(box, radius=6, fill=(255, 255, 255, 240))
             
         pil_img = Image.alpha_composite(pil_img.convert('RGBA'), overlay).convert('RGB')
         draw = ImageDraw.Draw(pil_img)
@@ -158,32 +157,50 @@ class Typesetter:
             bw, bh = box[2] - box[0], box[3] - box[1]
             if bw < 6 or bh < 6: continue
             
-            font_size = max(10, int(block.get('orig_line_height', bh) * 0.85))
-            while font_size > 6:
+            # Membatasi ukuran font agar tidak terlalu raksasa atau terlalu mikroskopis
+            font_size = int(block.get('orig_line_height', bh) * 0.8)
+            font_size = max(10, min(32, font_size)) 
+            
+            while font_size > 8:
                 font = ImageFont.truetype(font_path, font_size) if os.path.exists(font_path) else ImageFont.load_default()
                 lines, current_line = [], []
+                
+                # Word wrap yang lebih akurat
                 for word in block.get('translated_text', block['text']).upper().split():
                     test_line = ' '.join(current_line + [word]) if current_line else word
-                    if draw.textbbox((0, 0), test_line, font=font)[2] <= bw * 0.95:
+                    test_bbox = draw.textbbox((0, 0), test_line, font=font)
+                    if (test_bbox[2] - test_bbox[0]) <= bw * 0.95:
                         current_line.append(word)
                     else:
-                        lines.append(' '.join(current_line))
+                        if current_line:
+                            lines.append(' '.join(current_line))
                         current_line = [word]
                 if current_line: lines.append(' '.join(current_line))
                 
-                if (len(lines) * (font.getbbox("A")[3] - font.getbbox("A")[1] + 3)) <= bh * 0.95: break
+                # Hitung tinggi keseluruhan teks
+                line_height = font.getbbox("A")[3] - font.getbbox("A")[1] + 3
+                total_height = len(lines) * line_height
+                
+                # Cek apakah teks muat di dalam box
+                if total_height <= bh * 0.95:
+                    break
                 font_size -= 1
 
-            current_y = box[1] + (bh - (len(lines) * (font.getbbox("A")[3] - font.getbbox("A")[1] + 3))) // 2
+            # Hitung posisi Y agar teks berada di tengah (Vertical Center)
+            current_y = box[1] + (bh - total_height) // 2
+            
             for line in lines:
-                cw = draw.textbbox((0, 0), line, font=font)[2]
+                cw = draw.textbbox((0, 0), line, font=font)[2] - draw.textbbox((0, 0), line, font=font)[0]
                 cx = box[0] + (bw - cw) // 2
                 stroke_w = max(1, int(font_size * 0.05))
+                
+                # Bikin stroke/outline pada teks
                 for adj_x in range(-stroke_w, stroke_w + 1):
                     for adj_y in range(-stroke_w, stroke_w + 1):
                         draw.text((cx + adj_x, current_y + adj_y), line, font=font, fill=block['colors'][1])
+                # Gambar teks utama
                 draw.text((cx, current_y), line, font=font, fill=block['colors'][0])
-                current_y += (font.getbbox("A")[3] - font.getbbox("A")[1] + 3)
+                current_y += line_height
                 
         return pil_img
 
@@ -213,12 +230,10 @@ def translate_comic(input_path, output_path, ocr, translator, font_path):
         
     final_img = Typesetter.apply_text(img, blocks, font_path)
     
-    # Save langsung pakai fitur bawaan PIL
     final_img.save(output_path, format="WEBP", quality=80)
     return True
 
 def process_single_page(page, out_dir, ocr, translator, font_path):
-    """Fungsi pembantu agar bisa dieksekusi oleh ThreadPool"""
     idx = page['index']
     raw_path = os.path.join(out_dir, f"raw_{idx}.jpg")
     final_path = os.path.join(out_dir, f"terjemahan_{idx}.webp")
@@ -272,7 +287,6 @@ def main():
         print(f"\n{'='*40}\nMemproses Chapter: {folder_name}\n{'='*40}")
         pages = get_page_list(ch_url)
         
-        # Eksekusi paralel 2 halaman sekaligus
         print(f"Memulai pemrosesan {len(pages)} halaman (Multithreading max_workers=2)...")
         with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
             futures = {
