@@ -1,5 +1,4 @@
-paddlepaddle
-paddleocr
+rapidocr
 opencv-python
 pillow
 numpy<2

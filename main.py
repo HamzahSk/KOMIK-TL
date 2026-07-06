@@ -7,20 +7,28 @@ import zipfile
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
+# Mengganti easyocr dengan komponen RapidOCR
+from rapidocr import EngineType, LangDet, LangRec, ModelType, OCRVersion, RapidOCR
+
 import config
 from scraper import get_chapter_list, get_page_list
 from translator import AiTranslator 
 
-# Hapus 'import easyocr' di atas dan ganti dengan ini:
-from paddleocr import PaddleOCR
-
 class OCREngine:
     def __init__(self):
-        # Inisialisasi PaddleOCR
-        # use_gpu=False sangat penting agar aman jalan di CPU GitHub Actions
-        # lang='en' mencakup teks Inggris dan alfabet Indonesia
-        self.reader = PaddleOCR(use_textline_orientation=False, lang='en')
-
+        # Setting RapidOCR khusus untuk bahasa Inggris (EN) dengan model terbaru PP-OCRv6
+        self.reader = RapidOCR(
+            params={
+                "Det.engine_type": EngineType.ONNXRUNTIME,
+                "Det.lang_type": LangDet.EN,               
+                "Det.model_type": ModelType.SMALL,         
+                "Det.ocr_version": OCRVersion.PPOCRV6,     
+                "Rec.engine_type": EngineType.ONNXRUNTIME, 
+                "Rec.lang_type": LangRec.EN,               
+                "Rec.model_type": ModelType.SMALL,         
+                "Rec.ocr_version": OCRVersion.PPOCRV6,     
+            }
+        )
 
     def detect_and_merge(self, img_path):
         # 1. Buka dan pre-process gambar
@@ -30,24 +38,24 @@ class OCREngine:
         # Upscale gambar 2x lipat agar teks kecil lebih tajam
         img_resized = cv2.resize(img, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
         
-        # Catatan: PaddleOCR bekerja sangat baik dengan gambar BGR (berwarna)
-        # Jadi kita tidak perlu mengubahnya ke Grayscale seperti EasyOCR
+        # Ubah ke Grayscale (Hitam Putih)
+        gray = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
 
-        # 2. Baca dengan PaddleOCR
-        result = self.reader.predict(img_resized)
+        # 2. Baca dengan RapidOCR 
+        result = self.reader(gray)
+        if not result: return []
         
-        # Jalur pengaman jika PaddleOCR tidak mendeteksi teks sama sekali
-        if not result or not result[0]: return []
-        
+        # Penyesuaian struktur data output RapidOCR
+        iterable_result = result[0] if isinstance(result, tuple) else result
+        if not iterable_result: return []
+
         raw_lines = []
-        # Hasil PaddleOCR berada di result[0] berupa list bersarang
-        for line in result[0]:
-            bbox = line[0]        # Koordinat 4 titik
-            text = line[1][0]     # Teks yang dibaca
-            conf = line[1][1]     # Skor keyakinan (akurasi)
+        for item in iterable_result:
+            # Pastikan item memiliki setidaknya bounding box dan teks
+            if len(item) < 2: continue
             
-            # Abaikan hasil yang akurasinya di bawah 40% (mencegah teks "halu")
-            if conf < 0.4: continue
+            bbox = item[0]
+            text = item[1]
             
             # Kembalikan koordinat bounding box ke skala asli (dibagi 2)
             xs = [p[0] / 2.0 for p in bbox]
@@ -61,24 +69,19 @@ class OCREngine:
             # Jadikan huruf besar semua agar seragam
             fixed_text = fixed_text.upper()
             
-            # Bersihkan dengan Regex yang LEBIH AMAN
+            # Bersihkan dengan Regex yang LEBIH AMAN (sisakan tanda baca esensial)
             clean_text = re.sub(r'[^A-Z0-9\s.,!?\'"~-]', '', fixed_text).strip() 
             
             # Rapikan spasi yang berlebihan
             clean_text = re.sub(r'\s+', ' ', clean_text)
             
-            if clean_text:
+            if clean_text: # Pastikan teks tidak menjadi kosong
                 raw_lines.append({
                     "text": clean_text,
                     "box": [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))]
                 })
                 
-        # Serahkan ke fungsi merge andalanmu
         return self._merge_dialog_bubbles(raw_lines)
-
-    # Biarkan fungsi _merge_dialog_bubbles tetap seperti aslinya di bawah ini...
-    # def _merge_dialog_bubbles(self, lines):
-    # ... (kode lama milikmu) ...
 
     def _merge_dialog_bubbles(self, lines):
         if not lines: return []
