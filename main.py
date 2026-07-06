@@ -34,7 +34,7 @@ class OCREngine:
         # Jadi kita tidak perlu mengubahnya ke Grayscale seperti EasyOCR
 
         # 2. Baca dengan PaddleOCR
-        result = self.reader.ocr(img_resized, cls=False)
+        result = self.reader.predict(img_resized)
         
         # Jalur pengaman jika PaddleOCR tidak mendeteksi teks sama sekali
         if not result or not result[0]: return []
