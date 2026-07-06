@@ -121,10 +121,8 @@ class OCREngine:
             gabungan_teks = " ".join(combined_text)
             
             # FILTER TEKS: Hitung jumlah huruf (hanya A-Z) dalam kelompok ini
-            # Mengabaikan spasi, angka, dan simbol
             jumlah_huruf = len(re.sub(r'[^A-Z]', '', gabungan_teks.upper()))
             
-            # Jika jumlah huruf > 2, berarti valid (bukan cuma 1-2 huruf, bukan cuma angka, bukan cuma simbol)
             if jumlah_huruf > 2:
                 merged.append({
                     "text": gabungan_teks,
@@ -156,7 +154,6 @@ class Typesetter:
         
         for block in text_blocks:
             box = block['box']
-            # Background dibuat lebih ngepas dengan box asli
             draw_overlay.rounded_rectangle(box, radius=6, fill=(255, 255, 255, 240))
             
         pil_img = Image.alpha_composite(pil_img.convert('RGBA'), overlay).convert('RGB')
@@ -167,7 +164,6 @@ class Typesetter:
             bw, bh = box[2] - box[0], box[3] - box[1]
             if bw < 6 or bh < 6: continue
             
-            # Membatasi ukuran font agar tidak terlalu raksasa atau terlalu mikroskopis
             font_size = int(block.get('orig_line_height', bh) * 0.8)
             font_size = max(10, min(32, font_size)) 
             
@@ -175,7 +171,6 @@ class Typesetter:
                 font = ImageFont.truetype(font_path, font_size) if os.path.exists(font_path) else ImageFont.load_default()
                 lines, current_line = [], []
                 
-                # Word wrap yang lebih akurat
                 for word in block.get('translated_text', block['text']).upper().split():
                     test_line = ' '.join(current_line + [word]) if current_line else word
                     test_bbox = draw.textbbox((0, 0), test_line, font=font)
@@ -187,16 +182,13 @@ class Typesetter:
                         current_line = [word]
                 if current_line: lines.append(' '.join(current_line))
                 
-                # Hitung tinggi keseluruhan teks
                 line_height = font.getbbox("A")[3] - font.getbbox("A")[1] + 3
                 total_height = len(lines) * line_height
                 
-                # Cek apakah teks muat di dalam box
                 if total_height <= bh * 0.95:
                     break
                 font_size -= 1
 
-            # Hitung posisi Y agar teks berada di tengah (Vertical Center)
             current_y = box[1] + (bh - total_height) // 2
             
             for line in lines:
@@ -204,11 +196,9 @@ class Typesetter:
                 cx = box[0] + (bw - cw) // 2
                 stroke_w = max(1, int(font_size * 0.05))
                 
-                # Bikin stroke/outline pada teks
                 for adj_x in range(-stroke_w, stroke_w + 1):
                     for adj_y in range(-stroke_w, stroke_w + 1):
                         draw.text((cx + adj_x, current_y + adj_y), line, font=font, fill=block['colors'][1])
-                # Gambar teks utama
                 draw.text((cx, current_y), line, font=font, fill=block['colors'][0])
                 current_y += line_height
                 
@@ -243,31 +233,103 @@ def translate_comic(input_path, output_path, ocr, translator, font_path):
     final_img.save(output_path, format="WEBP", quality=80)
     return True
 
-def process_single_page(page, out_dir, ocr, translator, font_path):
+# --- 1. Fungsi Baru: Mengunduh Saja ---
+def download_page(page, out_dir):
     idx = page['index']
     raw_path = os.path.join(out_dir, f"raw_{idx}.jpg")
-    final_path = os.path.join(out_dir, f"terjemahan_{idx}.webp")
-    
-    msg = f"Halaman {idx} -> "
     if download_image(page['imageUrl'], raw_path):
-        # Jika berhasil mendeteksi dan menerjemahkan
-        if translate_comic(raw_path, final_path, ocr, translator, font_path):
-            if os.path.exists(raw_path):
-                os.remove(raw_path) 
-            return msg + "Selesai diterjemahkan!"
-        else:
-            # JIKA SKIP: Teks kosong atau cuma simbol/angka yang di-filter
-            # Convert langsung raw image ke format webp akhir supaya masuk ke archive .cbz
+        return raw_path
+    return None
+
+# --- 2. Fungsi Baru: Menggabungkan Gambar yang Pendek ---
+def merge_short_images(raw_paths, target_height=2200):
+    merged_paths = []
+    if not raw_paths: return merged_paths
+
+    current_group = []
+    current_height = 0
+    target_width = None
+    merge_idx = 1
+
+    out_dir = os.path.dirname(raw_paths[0])
+
+    for path in raw_paths:
+        try:
+            img = Image.open(path).convert("RGB")
+        except Exception:
+            continue
+
+        # Jadikan lebar gambar pertama di grup ini sebagai patokan
+        if target_width is None:
+            target_width = img.width
+
+        # Sesuaikan lebar jika beda piksel sedikit agar menyatu mulus
+        if img.width != target_width:
+            new_h = int(img.height * (target_width / img.width))
+            img = img.resize((target_width, new_h), Image.Resampling.LANCZOS)
+
+        current_group.append((img, path))
+        current_height += img.height
+
+        # Jika sudah mencapai atau melampaui target height, gabungkan
+        if current_height >= target_height:
+            merged_img = Image.new('RGB', (target_width, current_height))
+            y_offset = 0
+            for im, orig_path in current_group:
+                merged_img.paste(im, (0, y_offset))
+                y_offset += im.height
+
+            new_path = os.path.join(out_dir, f"merged_raw_{merge_idx}.jpg")
+            merged_img.save(new_path, format="JPEG", quality=95)
+            merged_paths.append(new_path)
+            merge_idx += 1
+
+            # Reset grup untuk gambar berikutnya
+            current_group = []
+            current_height = 0
+            target_width = None
+
+    # Simpan sisa gambar jika masih ada
+    if current_group:
+        merged_img = Image.new('RGB', (target_width, current_height))
+        y_offset = 0
+        for im, orig_path in current_group:
+            merged_img.paste(im, (0, y_offset))
+            y_offset += im.height
+        new_path = os.path.join(out_dir, f"merged_raw_{merge_idx}.jpg")
+        merged_img.save(new_path, format="JPEG", quality=95)
+        merged_paths.append(new_path)
+
+    # Hapus gambar raw asli karena sudah digabungkan
+    for path in raw_paths:
+        if os.path.exists(path):
             try:
-                img = Image.open(raw_path).convert("RGB")
-                img.save(final_path, format="WEBP", quality=80)
-                if os.path.exists(raw_path):
-                    os.remove(raw_path)
-                return msg + "Dilewati (Tidak ada teks), menyimpan gambar asli."
-            except Exception as e:
-                return msg + f"Gagal menyimpan gambar asli: {e}"
-                
-    return msg + "Gagal mengunduh gambar."
+                os.remove(path)
+            except OSError:
+                pass
+
+    return merged_paths
+
+# --- 3. Fungsi Baru: Memproses Gambar Gabungan Lokal ---
+def process_local_image(input_path, out_dir, idx, ocr, translator, font_path):
+    # Menyimpan hasil akhir dalam bentuk WEBP 
+    # (Penomoran dibantu dengan zfill agar urut di folder zip, misal 01, 02, 03)
+    final_path = os.path.join(out_dir, f"terjemahan_{str(idx).zfill(3)}.webp")
+    msg = f"Gambar Gabungan {idx} -> "
+
+    if translate_comic(input_path, final_path, ocr, translator, font_path):
+        if os.path.exists(input_path):
+            os.remove(input_path) 
+        return msg + "Selesai diterjemahkan!"
+    else:
+        try:
+            img = Image.open(input_path).convert("RGB")
+            img.save(final_path, format="WEBP", quality=80)
+            if os.path.exists(input_path):
+                os.remove(input_path)
+            return msg + "Dilewati (Tidak ada teks), menyimpan gambar asli."
+        except Exception as e:
+            return msg + f"Gagal menyimpan gambar asli: {e}"
 
 def main():
     mangas = [u for u in config.URLMANGA if u.strip()]
@@ -282,7 +344,6 @@ def main():
     os.makedirs("output", exist_ok=True)
     all_targets = []
 
-    # 1. Kumpulkan semua URL yang mau diproses
     for m_url in mangas:
         print(f"\n[Scraper] Mendapatkan daftar chapter dari: {m_url}")
         for ch in get_chapter_list(m_url):
@@ -295,53 +356,75 @@ def main():
     ocr = OCREngine()
     translator = AiTranslator()
 
-    # 2. Proses masing-masing chapter
     for ch_url in all_targets:
         print(f"\n[Scraper] Mengambil data halaman untuk: {ch_url}")
         
-        # --- PERUBAHAN UTAMA DI SINI ---
-        # Fetch web satu kali saja untuk mengambil object soup
         soup = fetch_chapter_soup(ch_url)
         if not soup:
             print("[Error] Gagal memuat halaman web. Melewati chapter ini...")
             continue
             
-        # Ambil nama chapter khusus dari fungsi get_chapter_name()
         raw_name = get_chapter_name(soup)
-        
         folder_name = re.sub(r'[^a-zA-Z0-9_\-\s]', '_', raw_name).strip()[:100]
         out_dir = os.path.join("output", folder_name)
         os.makedirs(out_dir, exist_ok=True)
         
         print(f"\n{'='*40}\nMemproses Chapter: {folder_name}\n{'='*40}")
         
-        # Ambil list halaman menggunakan object soup yang sama
         pages = get_page_list(soup)
-        # -------------------------------
-        
         if not pages:
             print("[Warning] Tidak ada halaman gambar yang ditemukan.")
             continue
             
-        print(f"Memulai pemrosesan {len(pages)} halaman (Multithreading max_workers=2)...")
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            futures = {
-                executor.submit(process_single_page, page, out_dir, ocr, translator, font_path): page['index'] 
+        # ==========================================
+        # FASE 1: Download Semua Gambar Paralel
+        # ==========================================
+        print(f"Mengunduh {len(pages)} halaman asli (max_workers=4)...")
+        downloaded_paths = {}
+        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+            future_to_page = {
+                executor.submit(download_page, page, out_dir): page['index'] 
                 for page in pages
             }
-            
+            for future in concurrent.futures.as_completed(future_to_page):
+                idx = future_to_page[future]
+                path_result = future.result()
+                if path_result:
+                    downloaded_paths[idx] = path_result
+
+        # Urutkan berdasarkan index asli agar saat digabung tidak acak
+        raw_paths = [downloaded_paths[idx] for idx in sorted(downloaded_paths.keys())]
+
+        # ==========================================
+        # FASE 2: Gabungkan Gambar yang Terlalu Pendek
+        # ==========================================
+        print("Mengecek dimensi & menggabungkan gambar-gambar yang pendek...")
+        merged_paths = merge_short_images(raw_paths, target_height=2200)
+
+        # ==========================================
+        # FASE 3: Proses OCR pada Gambar Gabungan
+        # ==========================================
+        print(f"Memulai pemrosesan {len(merged_paths)} gambar gabungan (max_workers=2)...")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            futures = {
+                executor.submit(process_local_image, path, out_dir, i+1, ocr, translator, font_path): i+1
+                for i, path in enumerate(merged_paths)
+            }
             for future in concurrent.futures.as_completed(futures):
                 try:
                     result_msg = future.result()
                     print(result_msg)
                 except Exception as exc:
-                    print(f"Halaman {futures[future]} -> Terjadi error tak terduga: {exc}")
+                    print(f"Gambar Gabungan {futures[future]} -> Terjadi error tak terduga: {exc}")
                     
+        # ==========================================
+        # FASE 4: Pengarsipan CBZ
+        # ==========================================
         cbz_path = os.path.join("output", f"{folder_name}.cbz")
         print(f"\nMengarsipkan ke: {cbz_path}...")
         
         with zipfile.ZipFile(cbz_path, 'w', zipfile.ZIP_DEFLATED) as cbz_file:
-            for file_name in os.listdir(out_dir):
+            for file_name in sorted(os.listdir(out_dir)):  # Pakai sorted agar halamannya rapi
                 file_path = os.path.join(out_dir, file_name)
                 if os.path.isfile(file_path):
                     cbz_file.write(file_path, arcname=file_name)
