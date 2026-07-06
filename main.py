@@ -1,10 +1,10 @@
 # main.py
 import os
-import cv2
 import re
 import requests
 import zipfile
 import numpy as np
+import concurrent.futures
 from PIL import Image, ImageDraw, ImageFont
 
 from rapidocr import EngineType, LangDet, LangRec, ModelType, OCRVersion, RapidOCR
@@ -15,7 +15,6 @@ from translator import AiTranslator
 
 class OCREngine:
     def __init__(self):
-        # Setting RapidOCR khusus untuk bahasa Inggris (EN) dengan model terbaru PP-OCRv6
         self.reader = RapidOCR(
             params={
                 "Det.engine_type": EngineType.ONNXRUNTIME,
@@ -30,18 +29,21 @@ class OCREngine:
         )
 
     def detect_and_merge(self, img_path):
-        # 1. Buka dan pre-process gambar
-        img = cv2.imread(img_path)
-        if img is None: return []
+        # 1. Buka dan pre-process gambar menggunakan PIL murni
+        try:
+            img = Image.open(img_path).convert("RGB")
+        except Exception:
+            return []
         
         # Upscale gambar 2x lipat agar teks kecil lebih tajam
-        img_resized = cv2.resize(img, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
+        new_size = (img.width * 2, img.height * 2)
+        img_resized = img.resize(new_size, Image.Resampling.BICUBIC)
         
-        # Ubah ke Grayscale (Hitam Putih)
-        gray = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
+        # Ubah ke Grayscale (Hitam Putih) dan jadikan NumPy array untuk RapidOCR
+        gray_np = np.array(img_resized.convert("L"))
 
         # 2. Baca dengan RapidOCR 
-        out = self.reader(gray)
+        out = self.reader(gray_np)
         if not out: return []
         
         raw_lines = []
@@ -49,14 +51,12 @@ class OCREngine:
 
         # --- FASE EKSTRAKSI DATA DARI OBJEK RAPIDOCR ---
         if isinstance(out, (tuple, list)):
-            # Fallback jika ternyata membaca output ala versi lama
             iterable_result = out[0] if isinstance(out, tuple) else out
             for item in iterable_result:
                 if len(item) >= 2:
                     boxes.append(item[0])
                     texts.append(item[1])
         else:
-            # Membongkar objek RapidOCROutput (v3.9.1+)
             if hasattr(out, 'boxes') and hasattr(out, 'txts'):
                 boxes, texts = out.boxes, out.txts
             elif hasattr(out, 'dt_boxes') and hasattr(out, 'rec_res'):
@@ -71,18 +71,14 @@ class OCREngine:
 
         # --- FASE POST-PROCESSING ---
         for bbox, text in zip(boxes, texts):
-            # Pastikan bounding box valid (PERBAIKAN ERROR NUMPY DI SINI)
             if bbox is None or len(bbox) < 4: continue
             
-            # Kembalikan koordinat bounding box ke skala asli (dibagi 2)
             xs = [p[0] / 2.0 for p in bbox]
             ys = [p[1] / 2.0 for p in bbox]
             
-            # Post-processing teks
             fixed_text = text.replace('|', 'I').replace('[', 'I').replace(']', 'I').replace('{', 'I').replace('}', 'I')
             fixed_text = fixed_text.upper()
             
-            # Bersihkan karakter
             clean_text = re.sub(r'[^A-Z0-9\s.,!?\'"~-]', '', fixed_text).strip() 
             clean_text = re.sub(r'\s+', ' ', clean_text)
             
@@ -130,16 +126,23 @@ class OCREngine:
 
 class ImageProcessor:
     @staticmethod
-    def detect_colors(img, box):
-        h, w = img.shape[:2]
-        crop = img[max(0, min(box[1], h)):max(0, min(box[3], h)), max(0, min(box[0], w)):max(0, min(box[2], w))]
-        if crop.size == 0 or np.mean(cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)) > 127: return (0, 0, 0), (255, 255, 255)
+    def detect_colors(pil_img, box):
+        # Crop area dan ubah ke grayscale memakai PIL
+        crop = pil_img.crop((max(0, box[0]), max(0, box[1]), min(pil_img.width, box[2]), min(pil_img.height, box[3])))
+        gray_crop = crop.convert("L")
+        
+        if not gray_crop.getbbox(): 
+            return (0, 0, 0), (255, 255, 255)
+            
+        # Analisis warna dasar rata-rata
+        if np.mean(np.array(gray_crop)) > 127: 
+            return (0, 0, 0), (255, 255, 255)
         return (255, 255, 255), (0, 0, 0)
 
 class Typesetter:
     @staticmethod
-    def apply_text(cv2_img, text_blocks, font_path="arial.ttf"):
-        pil_img = Image.fromarray(cv2.cvtColor(cv2_img, cv2.COLOR_BGR2RGB))
+    def apply_text(pil_img, text_blocks, font_path="arial.ttf"):
+        # Hapus konversi cv2, langsung mainkan objek PIL Image
         overlay = Image.new('RGBA', pil_img.size, (0, 0, 0, 0))
         draw_overlay = ImageDraw.Draw(overlay)
         
@@ -181,7 +184,8 @@ class Typesetter:
                         draw.text((cx + adj_x, current_y + adj_y), line, font=font, fill=block['colors'][1])
                 draw.text((cx, current_y), line, font=font, fill=block['colors'][0])
                 current_y += (font.getbbox("A")[3] - font.getbbox("A")[1] + 3)
-        return cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+                
+        return pil_img
 
 def download_image(url, save_path):
     try:
@@ -194,8 +198,11 @@ def download_image(url, save_path):
     return False
 
 def translate_comic(input_path, output_path, ocr, translator, font_path):
-    img = cv2.imread(input_path)
-    if img is None: return False
+    try:
+        img = Image.open(input_path).convert("RGB")
+    except Exception:
+        return False
+        
     blocks = ocr.detect_and_merge(input_path)
     if not blocks: return False
     
@@ -206,8 +213,25 @@ def translate_comic(input_path, output_path, ocr, translator, font_path):
         
     final_img = Typesetter.apply_text(img, blocks, font_path)
     
-    cv2.imwrite(output_path, final_img, [int(cv2.IMWRITE_WEBP_QUALITY), 80])
+    # Save langsung pakai fitur bawaan PIL
+    final_img.save(output_path, format="WEBP", quality=80)
     return True
+
+def process_single_page(page, out_dir, ocr, translator, font_path):
+    """Fungsi pembantu agar bisa dieksekusi oleh ThreadPool"""
+    idx = page['index']
+    raw_path = os.path.join(out_dir, f"raw_{idx}.jpg")
+    final_path = os.path.join(out_dir, f"terjemahan_{idx}.webp")
+    
+    msg = f"Halaman {idx} -> "
+    if download_image(page['imageUrl'], raw_path):
+        if translate_comic(raw_path, final_path, ocr, translator, font_path):
+            if os.path.exists(raw_path):
+                os.remove(raw_path) 
+            return msg + "Selesai!"
+        else:
+            return msg + "Dilewati (Tidak ada teks/Error)"
+    return msg + "Gagal mengunduh gambar."
 
 def main():
     mangas = [u for u in config.URLMANGA if u.strip()]
@@ -248,20 +272,20 @@ def main():
         print(f"\n{'='*40}\nMemproses Chapter: {folder_name}\n{'='*40}")
         pages = get_page_list(ch_url)
         
-        for page in pages:
-            idx = page['index']
-            raw_path = os.path.join(out_dir, f"raw_{idx}.jpg")
-            final_path = os.path.join(out_dir, f"terjemahan_{idx}.webp")
+        # Eksekusi paralel 2 halaman sekaligus
+        print(f"Memulai pemrosesan {len(pages)} halaman (Multithreading max_workers=2)...")
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            futures = {
+                executor.submit(process_single_page, page, out_dir, ocr, translator, font_path): page['index'] 
+                for page in pages
+            }
             
-            print(f"Halaman {idx} -> Mengunduh...")
-            if download_image(page['imageUrl'], raw_path):
-                print(f"Halaman {idx} -> Scanning & Translate...")
-                if translate_comic(raw_path, final_path, ocr, translator, font_path):
-                    if os.path.exists(raw_path):
-                        os.remove(raw_path) 
-                    print(f"Halaman {idx} -> Selesai!")
-                else:
-                    print(f"Halaman {idx} -> Dilewati (Tidak ada teks/Error)")
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    result_msg = future.result()
+                    print(result_msg)
+                except Exception as exc:
+                    print(f"Halaman {futures[future]} -> Terjadi error tak terduga: {exc}")
                     
         cbz_path = os.path.join("output", f"{folder_name}.cbz")
         print(f"\nMengarsipkan ke: {cbz_path}...")
