@@ -15,7 +15,7 @@ class OCREngine:
     def __init__(self):
         # Inisialisasi PaddleOCR. 
         # Tips: Ubah lang='en' menjadi 'japan', 'korean', atau 'ch' jika komik raw bukan bahasa Inggris.
-        self.ocr = PaddleOCR(use_textline_orientation=True, lang='en')
+        self.ocr = PaddleOCR(use_angle_cls=True, lang='en', show_log=False)
 
     def detect_and_merge(self, img_path):
         # Proses OCR gambar
