@@ -48,6 +48,8 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run Translator Script
+        env:
+          GROQ_API_KEYS: ${{ secrets.GROQ_API_KEYS }} 
         run: |
           python main.py
 
