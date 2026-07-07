@@ -198,9 +198,10 @@ class AiTranslator:
                             "content": user_message
                         }
                     ],
-                    "model": "llama-3.3-70b-versatile",
-                    "temperature": 1,
+                    "model": "qwen/qwen3.6-27b",
+                    "temperature": 0.6,
                     "max_completion_tokens": 2061,
+                    "reasoning_effort": "none",
                     "top_p": 1,
                     "stream": False
                 }
