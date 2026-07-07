@@ -198,10 +198,10 @@ class AiTranslator:
                             "content": user_message
                         }
                     ],
-                    "model": "qwen/qwen3.6-27b",
+                    "model": "openai/gpt-oss-120b",
                     "temperature": 0.6,
-                    "max_completion_tokens": 2061,
-                    "reasoning_effort": "none",
+                    "max_completion_tokens": 1500,
+                    "reasoning_effort": "low",
                     "top_p": 1,
                     "stream": False
                 }
