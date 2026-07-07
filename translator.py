@@ -4,16 +4,13 @@ import re
 import random
 import requests
 import os
+import json
 
 class AiTranslator:
     def __init__(self):
-        # Konfigurasi API Utama (Olabiba)
-        self.phpsessid = os.urandom(13).hex()
-        self.olabiba_headers = {
-            'referer': 'https://www.olabiba.com/',
-            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
-            'cookie': f'PHPSESSID={self.phpsessid};'
-        }
+        # Konfigurasi Session untuk API Utama (GPT Chat)
+        self.gptchat_cookie = None
+        self.gptchat_csrf = None
         
         # Konfigurasi API Fallback 1 (DeepSeek Proxy)
         self.fallback_url = 'https://llmproxy.org/api/chat.php'
@@ -73,57 +70,102 @@ class AiTranslator:
             + f"\n{self.SEPARATOR}\n".join(batch_texts)
         )
 
-    def _olabiba_translate(self, prompt_text):
-        """Metode Utama menggunakan Olabiba Scraper."""
-        print("[System] Memulai sesi API Utama via Olabiba...")
+    def _get_gptchat_session(self):
+        """Metode untuk mendapatkan Cookie dan CSRF Token layaknya fungsi getSessionData di JS"""
+        print("[System] 🔑 Mengambil session GPT Chat...")
+        try:
+            response = requests.get('https://gpt.chat', timeout=15)
+            response.raise_for_status()
+
+            # Ekstrak Cookie
+            cookies = response.cookies
+            self.gptchat_cookie = '; '.join([f"{c.name}={c.value}" for c in cookies])
+            
+            # Ekstrak CSRF Token menggunakan Regex (pengganti cheerio)
+            match = re.search(r'<meta\s+name="csrf-token"\s+content="([^"]+)"', response.text)
+            if match:
+                self.gptchat_csrf = match.group(1)
+                print("[System] ✅ Session GPT Chat didapat")
+            else:
+                raise ValueError("CSRF Token tidak ditemukan di HTML")
+                
+        except Exception as e:
+            print(f"[Error] Gagal mengambil session: {e}")
+            self.gptchat_cookie = None
+            self.gptchat_csrf = None
+
+    def _gptchat_translate(self, prompt_text):
+        """Metode Utama menggunakan GPT Chat API Scraper."""
+        print("[System] 📤 Memulai sesi API Utama via GPT Chat...")
         
-        # Tahap 1: Kirim Pesan (POST)
+        # Ambil session jika belum ada
+        if not self.gptchat_cookie or not self.gptchat_csrf:
+            self._get_gptchat_session()
+            
+        # Jika gagal mengambil session, abort
+        if not self.gptchat_cookie or not self.gptchat_csrf:
+            print("[Error] Session tidak valid, skip GPT Chat.")
+            return None
+
+        headers = {
+            'Accept': '*/*',
+            'Content-Type': 'application/json',
+            'Cookie': self.gptchat_cookie,
+            'Origin': 'https://gpt.chat',
+            'Referer': 'https://gpt.chat/chat',
+            'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36',
+            'X-Csrf-Token': self.gptchat_csrf
+        }
+
         payload = {
-            'text': prompt_text,
-            'mood': 'normal', # Diubah ke 'normal' agar terjemahan lebih natural dibanding 'funny'
-            'lang': 'id',
-            'adblock': 'No',
-            'theme': 'light'
+            'model': 'openai/gpt-5-mini', # Menyesuaikan default dari gptulti.js
+            'messages': [{'role': 'user', 'content': prompt_text}]
         }
 
         try:
-            post_res = requests.post(
-                'https://cors-proxy-eight-ruddy.vercel.app/?url=https://www.olabiba.com/php/message.php', 
-                headers=self.olabiba_headers, 
-                data=payload,
-                timeout=20
-            )
-            post_res.raise_for_status()
-            
-            # Tahap 2: Terima Stream Pesan (GET)
-            stream_headers = self.olabiba_headers.copy()
-            stream_headers['accept'] = 'text/event-stream'
-            
-            stream_res = requests.get(
-                'https://cors-proxy-eight-ruddy.vercel.app/?url=https://www.olabiba.com/php/stream.php',
-                headers=stream_headers,
+            response = requests.post(
+                'https://gpt.chat/api/chat',
+                headers=headers,
+                json=payload,
                 stream=True,
                 timeout=30
             )
-            stream_res.raise_for_status()
+            response.raise_for_status()
 
+            print("[System] 📥 Menerima stream Respons AI...")
             full_response = ""
-            for line in stream_res.iter_lines():
+            
+            # Parsing stream data
+            for line in response.iter_lines():
                 if line:
-                    decoded_line = line.decode('utf-8')
-                    if decoded_line.startswith('data:'):
-                        data_content = decoded_line.replace('data:', '', 1).strip()
+                    decoded_line = line.decode('utf-8').strip()
+                    
+                    if not decoded_line or decoded_line.startswith(':'):
+                        continue
+                        
+                    if decoded_line.startswith('data: '):
+                        data_content = decoded_line.replace('data: ', '', 1).strip()
+                        
                         if data_content == '[DONE]':
                             break
-                        full_response += data_content
+                            
+                        try:
+                            # Ekstrak json per chunk
+                            json_data = json.loads(data_content)
+                            content_chunk = json_data.get('choices', [{}])[0].get('delta', {}).get('content', '')
+                            if content_chunk:
+                                full_response += content_chunk
+                        except json.JSONDecodeError:
+                            continue # Skip chunk yang rusak (sama seperti catch {} di JS)
 
-            # Tahap 3: Pembersihan respons seperti di olabaai.js
-            clean_text = full_response.replace('&nbsp;', ' ')
-            clean_text = re.sub(r'\[ELABORATE\]|\[FOLLOWUP\].*|', '', clean_text, flags=re.DOTALL)
-            return clean_text.strip()
+            print("[System] ✅ Streaming GPT Chat Selesai")
+            return full_response.strip()
 
         except Exception as e:
-            print(f"[Error] API Olabiba gagal: {e}")
+            print(f"[Error] API GPT Chat gagal: {e}")
+            # Reset session agar batch selanjutnya mencoba request token baru
+            self.gptchat_cookie = None 
+            self.gptchat_csrf = None
             return None
 
     def _fallback_translate(self, prompt_text):
@@ -226,14 +268,14 @@ class AiTranslator:
             translations = []
             
             try:
-                # 1. Coba API Utama (Olabiba)
-                ai_response = self._olabiba_translate(user_message)
+                # 1. Coba API Utama (GPT Chat Baru)
+                ai_response = self._gptchat_translate(user_message)
                 translations = self._verify_and_clean(ai_response, batch)
                 
                 if translations:
                     print("=== RESPON UTAMA SUKSES ===")
                 else:
-                    raise ValueError("Format teks dari API Utama Olabiba berantakan.")
+                    raise ValueError("Format teks dari API Utama GPT Chat berantakan.")
                 
             except Exception as e:
                 print(f"[Warning] API Utama Bermasalah ({e}). Beralih ke Fallback 1...")
@@ -284,3 +326,4 @@ class AiTranslator:
         lines = [line.strip() for line in response_text.split('\n') if line.strip()]
         translations = [self._clean_part(line) for line in lines]
         return translations if translations else [response_text]
+
