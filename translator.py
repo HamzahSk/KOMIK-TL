@@ -7,16 +7,13 @@ import requests
 
 class AiTranslator:
     def __init__(self):
-        # Konfigurasi API Utama (OnChatbot)
-        self.api_url = 'https://onlinechatbot.ai/wp-admin/admin-ajax.php'
-        self.nonce = 'e82bmm7cf5'
+        # Konfigurasi API Utama (Flat AI)
+        self.api_url = 'https://flatai.org/wp-admin/admin-ajax.php'
+        self.nonce = '2aa8686f00'
         self.headers = {
-            'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-            'Accept': '*/*',
-            'Origin': 'https://onlinechatbot.ai',
-            'Referer': 'https://onlinechatbot.ai/chatbots/no-signup/',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Cookie': 'snp_popup_seen=1'
+            'Origin': 'https://flatai.org',
+            'Referer': 'https://flatai.org/free-ai-chatbot-no-registration/',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
         
         # Konfigurasi API Fallback 1 (DeepSeek Proxy)
@@ -177,34 +174,63 @@ class AiTranslator:
             translations = []
             
             try:
-                # 1. Coba API Utama (OnChatbot)
+                # 1. Coba API Utama (Flat AI)
                 payload = {
-                    'action': 'do_chat_with_ai',
-                    'ai_chatbot_nonce': self.nonce,
-                    'ai_name': 'No Signup',
-                    'origin': '',
-                    'instruction': self.instruction,
-                    'past_context': '',
-                    'user_message': user_message,
-                    'ai_message': "Zero registration required. I'm ready when you are. What can I do for you today?"
+                    'action': 'my_chatbot',
+                    'nonce': self.nonce,
+                    'model': 'default',
+                    'system_message_content': self.instruction,
+                    'messages': json.dumps([{'role': 'user', 'content': user_message}])
                 }
                 
-                response = requests.post(self.api_url, headers=self.headers, data=payload, timeout=20)
+                # Menggunakan stream=True untuk meniru behaviour Server-Sent Events dari Node.js
+                response = requests.post(self.api_url, headers=self.headers, data=payload, stream=True, timeout=45)
                 response.raise_for_status()
-                data = response.json()
                 
-                if not data.get('success'):
-                    raise ValueError(f"API OnChatbot merespon gagal: {data}")
+                ai_response = ""
+                stop_streaming = False
+                
+                for line in response.iter_lines():
+                    if line:
+                        decoded_line = line.decode('utf-8').strip()
+                        if decoded_line.startswith('data:'):
+                            json_str = re.sub(r'^data:\s*', '', decoded_line)
+                            
+                            if not json_str or json_str == '[DONE]':
+                                continue
+                                
+                            try:
+                                parsed = json.loads(json_str)
+                                content = parsed.get('choices', [{}])[0].get('delta', {}).get('content')
+                                
+                                if content:
+                                    ai_response += content
+                                    
+                                    # Cek stop stream condition sama seperti di js
+                                    match = re.search(r'<memory>|\[USER\]', ai_response)
+                                    if match:
+                                        ai_response = ai_response[:match.start()].rstrip()
+                                        stop_streaming = True
+                                        break
+                                        
+                            except json.JSONDecodeError:
+                                pass # Abaikan jika gagal parse line ini
+                                
+                    if stop_streaming:
+                        break
+
+                ai_response = ai_response.strip()
+
+                if not ai_response:
+                    raise ValueError("API Utama merespon kosong.")
                     
-                ai_response = data.get('data', '')
-                
                 # Verifikasi hasil Utama
                 translations = self._verify_and_clean(ai_response, batch)
                 
                 if translations:
-                    print("=== RESPON UTAMA SUKSES ===")
+                    print("=== RESPON UTAMA (FLAT AI) SUKSES ===")
                 else:
-                    raise ValueError(f"Format teks dari API Utama berantakan.")
+                    raise ValueError("Format teks dari API Utama berantakan.")
                 
             except Exception as e:
                 print(f"[Warning] API Utama Bermasalah ({e}). Beralih ke Fallback 1...")
