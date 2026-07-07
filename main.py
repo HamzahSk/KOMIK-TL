@@ -429,14 +429,37 @@ def main():
                 kumpulan_teks.append(b['text'])
 
         # ==========================================
-        # FASE 4: Batch Translation 
+        # FASE 4: Batch Translation (Limit 1000 Karakter/Batch)
         # ==========================================
+        hasil_terjemahan = []
         if kumpulan_teks:
-            print(f"Menerjemahkan {len(kumpulan_teks)} blok teks sekaligus (Batch)...")
-            hasil_terjemahan = translator.translate_batch(kumpulan_teks)
+            print(f"Menerjemahkan {len(kumpulan_teks)} blok teks...")
+            
+            current_batch = []
+            current_len = 0
+            
+            for teks in kumpulan_teks:
+                # Asumsi panjang teks ditambah sedikit buffer (misal untuk spasi/pemisah)
+                panjang_teks = len(teks)
+                
+                # Jika ditambah teks ini melebihi 1000 karakter, kirim batch yang ada dulu
+                if current_len + panjang_teks > 1000 and current_batch:
+                    hasil_terjemahan.extend(translator.translate_batch(current_batch))
+                    current_batch = []
+                    current_len = 0
+                
+                # Masukkan teks ke batch saat ini
+                current_batch.append(teks)
+                current_len += panjang_teks
+                
+            # Jangan lupa terjemahkan sisa teks yang ada di batch terakhir
+            if current_batch:
+                hasil_terjemahan.extend(translator.translate_batch(current_batch))
+                
+            print(f"Selesai menerjemahkan total {len(hasil_terjemahan)} blok teks.")
         else:
             print("Tidak ada teks yang perlu diterjemahkan di chapter ini.")
-            hasil_terjemahan = []
+
 
         # ==========================================
         # FASE 5: Typesetting & Distribusi Kembali
