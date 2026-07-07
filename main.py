@@ -376,8 +376,6 @@ def main():
         
         print(f"\n{'='*40}\nMemproses Chapter: {folder_name}\n{'='*40}")
         
-        translator.start_new_chapter() 
-        
         pages = get_page_list(soup)
         if not pages:
             print("[Warning] Tidak ada halaman gambar yang ditemukan.")

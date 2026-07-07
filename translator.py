@@ -1,31 +1,28 @@
 # translator.py
-import os
-import re
-import json
 import time
+import re
 import random
-
-# Import client dari deepseek.py
-from deepseek import deepseek_client
+import requests
+import os
 
 class AiTranslator:
     def __init__(self):
-        # Ambil list Auth Keys dari Environment Variable (format JSON array)
-        # Ganti nama ENV menjadi DEEPSEEK_AUTH_KEYS agar sesuai konteks
-        keys_env = os.getenv('DEEPSEEK_AUTH_KEYS', '["fR3AbopXwzh9y9behMnDFGnTMf3p+NnKwhKh92h/gTOZKwXZED8yRx3WkdVJHaau"]')
+        # Konfigurasi API Utama (Olabiba)
+        self.phpsessid = os.urandom(13).hex()
+        self.olabiba_headers = {
+            'referer': 'https://www.olabiba.com/',
+            'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36',
+            'cookie': f'PHPSESSID={self.phpsessid};'
+        }
         
-        try:
-            self.auth_keys = json.loads(keys_env)
-        except json.JSONDecodeError:
-            print("[Error] Format DEEPSEEK_AUTH_KEYS di env salah. Harus berupa JSON array.")
-            self.auth_keys = []
+        # Konfigurasi API Fallback 1 (DeepSeek Proxy)
+        self.fallback_url = 'https://llmproxy.org/api/chat.php'
+        
+        # Konfigurasi API Fallback 2 (TheTurboChat / Gemini)
+        self.fallback_url_2 = 'https://cors-proxydev.wisp.uno/proxy?url=https://theturbochat.com/api/chat/message'
         
         self.MAX_CHARS = 1500
         self.SEPARATOR = '130495848'
-        
-        # Variabel untuk menyimpan state session per chapter
-        self.current_session_id = None
-        self.current_auth_key = None
         
         self.instruction = (
             "Translate the text into natural, fluent Indonesian that sounds as if it were originally "
@@ -36,32 +33,19 @@ class AiTranslator:
             "not exist in the source text."
         )
 
-    def start_new_chapter(self):
-        """
-        Dipanggil setiap kali berganti chapter. 
-        Akan merotasi Auth Key secara acak dan membuat session ID baru.
-        """
-        if not self.auth_keys:
-            print("[Error] List Auth Key DeepSeek kosong!")
-            return False
-            
-        # Ganti key secara acak untuk chapter baru
-        self.current_auth_key = random.choice(self.auth_keys)
-        deepseek_client.bind(self.current_auth_key)
-        
-        print("[System] Memulai sesi DeepSeek baru untuk chapter ini...")
-        
-        # Buat sesi chat baru
-        response = deepseek_client.new_chat()
-        
-        if response.get('status') and response.get('data'):
-            self.current_session_id = response['data'].get('id')
-            print(f"[System] Sukses membuat Session ID: {self.current_session_id}")
-            return True
-        else:
-            print(f"[Error] Gagal membuat sesi baru: {response.get('msg')}")
-            self.current_session_id = None
-            return False
+    def _get_fallback_headers(self):
+        """Membuat header dinamis dengan IP acak untuk fallback 1."""
+        ip = f"{random.randint(1, 255)}.{random.randint(0, 255)}.{random.randint(0, 255)}.{random.randint(0, 255)}"
+        return {
+            'Accept': '*/*',
+            'Content-Type': 'application/json',
+            'Origin': 'https://deep-seek.online',
+            'Referer': 'https://deep-seek.online/',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'X-Forwarded-For': ip,
+            'X-Real-IP': ip,
+            'CF-Connecting-IP': ip
+        }
 
     def _create_batches(self, texts):
         batches = []
@@ -89,6 +73,195 @@ class AiTranslator:
             + f"\n{self.SEPARATOR}\n".join(batch_texts)
         )
 
+    def _olabiba_translate(self, prompt_text):
+        """Metode Utama menggunakan Olabiba Scraper."""
+        print("[System] Memulai sesi API Utama via Olabiba...")
+        
+        # Tahap 1: Kirim Pesan (POST)
+        payload = {
+            'text': prompt_text,
+            'mood': 'normal', # Diubah ke 'normal' agar terjemahan lebih natural dibanding 'funny'
+            'lang': 'id',
+            'adblock': 'No',
+            'theme': 'light'
+        }
+
+        try:
+            post_res = requests.post(
+                'https://www.olabiba.com/php/message.php', 
+                headers=self.olabiba_headers, 
+                data=payload,
+                timeout=20
+            )
+            post_res.raise_for_status()
+            
+            # Tahap 2: Terima Stream Pesan (GET)
+            stream_headers = self.olabiba_headers.copy()
+            stream_headers['accept'] = 'text/event-stream'
+            
+            stream_res = requests.get(
+                'https://www.olabiba.com/php/stream.php',
+                headers=stream_headers,
+                stream=True,
+                timeout=30
+            )
+            stream_res.raise_for_status()
+
+            full_response = ""
+            for line in stream_res.iter_lines():
+                if line:
+                    decoded_line = line.decode('utf-8')
+                    if decoded_line.startswith('data:'):
+                        data_content = decoded_line.replace('data:', '', 1).strip()
+                        if data_content == '[DONE]':
+                            break
+                        full_response += data_content
+
+            # Tahap 3: Pembersihan respons seperti di olabaai.js
+            clean_text = full_response.replace('&nbsp;', ' ')
+            clean_text = re.sub(r'\[ELABORATE\]|\[FOLLOWUP\].*|', '', clean_text, flags=re.DOTALL)
+            return clean_text.strip()
+
+        except Exception as e:
+            print(f"[Error] API Olabiba gagal: {e}")
+            return None
+
+    def _fallback_translate(self, prompt_text):
+        """Metode fallback 1 menggunakan DeepSeek via llmproxy."""
+        print("[System] Memulai sesi Fallback 1 via DeepSeek...")
+        
+        payload = {
+            "messages": [{"content": prompt_text, "role": "user"}],
+            "model": "v3",
+            "stream": False,
+            "web_search": False
+        }
+
+        try:
+            response = requests.post(
+                self.fallback_url, 
+                headers=self._get_fallback_headers(), 
+                json=payload, 
+                timeout=30
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            content = data.get('content', '')
+            
+            # Hapus tag <think>...</think> jika ada
+            clean_content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL | re.IGNORECASE).strip()
+            return clean_content
+            
+        except Exception as e:
+            print(f"[Error] Fallback 1 API DeepSeek gagal: {e}")
+            return None
+
+    def _fallback_translate_2(self, prompt_text):
+        """Metode fallback 2 menggunakan Gemini via TheTurboChat."""
+        print("[System] Memulai sesi Fallback 2 via TheTurboChat (Gemini)...")
+        
+        headers = {
+            'accept': '*/*',
+            'content-type': 'application/json',
+            'origin': 'https://theturbochat.com',
+            'referer': 'https://theturbochat.com/gemini',
+            'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36'
+        }
+        
+        payload = {
+            "runtime": "gemini",
+            "message": prompt_text,
+            "configuration": None,
+            "history": [],  # Dikosongkan agar tidak ada memori lintas-batch
+            "language": "en",
+            "sourcePage": "/gemini"
+        }
+
+        try:
+            response = requests.post(
+                self.fallback_url_2, 
+                headers=headers, 
+                json=payload, 
+                timeout=30
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            return data.get('outputText', '')
+            
+        except Exception as e:
+            print(f"[Error] Fallback 2 API TheTurboChat gagal: {e}")
+            return None
+
+    def _verify_and_clean(self, ai_response, batch):
+        """Helper untuk mengekstrak dan memverifikasi keselarasan terjemahan."""
+        if not ai_response:
+            return None
+            
+        translations = self._extract_translations(ai_response)
+        
+        # Jika selaras, langsung kembalikan
+        if len(translations) == len(batch):
+            return translations
+            
+        # Jika tidak selaras, coba pembersihan ekstra
+        raw_lines = [line.strip() for line in ai_response.split('\n') if line.strip() and self.SEPARATOR not in line]
+        if len(raw_lines) == len(batch):
+            return [self._clean_part(l) for l in raw_lines]
+            
+        # Jika tetap gagal, return None agar bisa dilanjut ke fallback berikutnya
+        return None
+
+    def translate_batch(self, texts):
+        if not texts:
+            return []
+        
+        batches = self._create_batches(texts)
+        all_translations = []
+        
+        for batch_idx, batch in enumerate(batches):
+            print(f"\n[Batch {batch_idx+1}/{len(batches)}] Menerjemahkan {len(batch)} teks...")
+            user_message = self._format_batch_text(batch)
+            translations = []
+            
+            try:
+                # 1. Coba API Utama (Olabiba)
+                ai_response = self._olabiba_translate(user_message)
+                translations = self._verify_and_clean(ai_response, batch)
+                
+                if translations:
+                    print("=== RESPON UTAMA SUKSES ===")
+                else:
+                    raise ValueError("Format teks dari API Utama Olabiba berantakan.")
+                
+            except Exception as e:
+                print(f"[Warning] API Utama Bermasalah ({e}). Beralih ke Fallback 1...")
+                
+                # 2. Fallback 1 (DeepSeek)
+                ai_response = self._fallback_translate(user_message)
+                translations = self._verify_and_clean(ai_response, batch)
+                
+                if translations:
+                    print("=== RESPON FALLBACK 1 SUKSES ===")
+                else:
+                    print("[Warning] Fallback 1 Gagal atau Format Berantakan. Beralih ke Fallback 2...")
+                    
+                    # 3. Fallback 2 (TheTurboChat)
+                    ai_response = self._fallback_translate_2(user_message)
+                    translations = self._verify_and_clean(ai_response, batch)
+                    
+                    if translations:
+                        print("=== RESPON FALLBACK 2 SUKSES ===")
+                    else:
+                        print("[Error] Semua API dan Fallback gagal. Menggunakan teks asli.")
+                        translations = batch
+
+            all_translations.extend(translations)
+            time.sleep(1.5)
+                
+        return all_translations
+
     def _clean_part(self, text):
         cleaned = text.strip()
         cleaned = re.sub(r'^\d+[\.\)]\s*', '', cleaned)
@@ -111,61 +284,3 @@ class AiTranslator:
         lines = [line.strip() for line in response_text.split('\n') if line.strip()]
         translations = [self._clean_part(line) for line in lines]
         return translations if translations else [response_text]
-
-    def _verify_and_clean(self, ai_response, batch):
-        if not ai_response:
-            return None
-            
-        translations = self._extract_translations(ai_response)
-        
-        if len(translations) == len(batch):
-            return translations
-            
-        raw_lines = [line.strip() for line in ai_response.split('\n') if line.strip() and self.SEPARATOR not in line]
-        if len(raw_lines) == len(batch):
-            return [self._clean_part(l) for l in raw_lines]
-            
-        return None
-
-    def translate_batch(self, texts):
-        if not texts:
-            return []
-            
-        # Antisipasi kalau lupa panggil start_new_chapter() dari main.py
-        if not self.current_session_id:
-            print("[Warning] Sesi belum diinisialisasi. Membuat sesi darurat...")
-            self.start_new_chapter()
-            
-        batches = self._create_batches(texts)
-        all_translations = []
-        
-        for batch_idx, batch in enumerate(batches):
-            print(f"\n[Batch {batch_idx+1}/{len(batches)}] Menerjemahkan {len(batch)} teks via DeepSeek Session...")
-            user_message = self._format_batch_text(batch)
-            
-            try:
-                # Memanggil DeepSeek dengan Session ID chapter saat ini
-                response = deepseek_client.chat(user_message, chat_id=self.current_session_id)
-                
-                if response.get('status') and response.get('data'):
-                    ai_response = response['data'].get('message', '')
-                    translations = self._verify_and_clean(ai_response, batch)
-                    
-                    if translations:
-                        print("=== RESPON DEEPSEEK SUKSES ===")
-                    else:
-                        print("[Warning] Format respon berantakan atau jumlah baris beda. Memakai teks asli.")
-                        translations = batch
-                else:
-                    print(f"[Error] Chat gagal: {response.get('msg')}. Memakai teks asli.")
-                    translations = batch
-                    
-            except Exception as e:
-                print(f"[Error] Sistem DeepSeek bermasalah ({e}). Memakai teks asli.")
-                translations = batch
-
-            all_translations.extend(translations)
-            time.sleep(2) # Beri jeda sedikit agar sesi di server tidak di-spam
-                
-        return all_translations
-

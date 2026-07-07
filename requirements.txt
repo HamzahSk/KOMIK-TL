@@ -5,4 +5,3 @@ pillow
 numpy<2
 requests
 beautifulsoup4
-wasmtime
