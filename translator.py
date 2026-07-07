@@ -23,7 +23,7 @@ class AiTranslator:
         self.fallback_url = 'https://llmproxy.org/api/chat.php'
         
         # Konfigurasi API Fallback 2 (TheTurboChat / Gemini)
-        self.fallback_url_2 = 'https://theturbochat.com/api/chat/message'
+        self.fallback_url_2 = 'https://cors-proxydev.wisp.uno/proxy?url=https://theturbochat.com/api/chat/message'
         
         self.MAX_CHARS = 1500
         self.SEPARATOR = '130495848'
