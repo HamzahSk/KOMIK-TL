@@ -1,5 +1,41 @@
 # config.py
-URLMANGA = ["https://vymanga.net/manga/a-dragons-love"] 
-URLCHAPTER = [""]
+URLMANGA = [""] 
+URLCHAPTER = [
+  "https://vymanga.net/read/checkmate-r/2247179",
+  "https://vymanga.net/read/checkmate-r/2247180",
+  "https://vymanga.net/read/checkmate-r/2247181",
+  "https://vymanga.net/read/checkmate-r/2247182",
+  "https://vymanga.net/read/checkmate-r/2247183",
+  "https://vymanga.net/read/checkmate-r/2247184",
+  "https://vymanga.net/read/checkmate-r/2247186",
+  "https://vymanga.net/read/checkmate-r/2247187",
+  "https://vymanga.net/read/checkmate-r/2247188",
+  "https://vymanga.net/read/checkmate-r/2247189",
+  "https://vymanga.net/read/checkmate-r/2247190",
+  "https://vymanga.net/read/checkmate-r/2247191",
+  "https://vymanga.net/read/checkmate-r/2247192",
+  "https://vymanga.net/read/checkmate-r/2247193",
+  "https://vymanga.net/read/checkmate-r/2247194",
+  "https://vymanga.net/read/checkmate-r/2247195",
+  "https://vymanga.net/read/checkmate-r/2247197",
+  "https://vymanga.net/read/checkmate-r/2247199",
+  "https://vymanga.net/read/checkmate-r/2247200",
+  "https://vymanga.net/read/checkmate-r/2247203",
+  "https://vymanga.net/read/checkmate-r/2247207",
+  "https://vymanga.net/read/checkmate-r/2247212",
+  "https://vymanga.net/read/checkmate-r/2247217",
+  "https://vymanga.net/read/checkmate-r/2247224",
+  "https://vymanga.net/read/checkmate-r/2247230",
+  "https://vymanga.net/read/checkmate-r/2247237",
+  "https://vymanga.net/read/checkmate-r/2247251",
+  "https://vymanga.net/read/checkmate-r/2247260",
+  "https://vymanga.net/read/checkmate-r/2247270",
+  "https://vymanga.net/read/checkmate-r/2247278",
+  "https://vymanga.net/read/checkmate-r/2247280",
+  "https://vymanga.net/read/checkmate-r/2247283",
+  "https://vymanga.net/read/checkmate-r/2247288",
+  "https://vymanga.net/read/checkmate-r/2247291",
+  "https://vymanga.net/read/checkmate-r/2247294"
+]
 
 FONT_PATH = "Roboto-Bold.ttf"
