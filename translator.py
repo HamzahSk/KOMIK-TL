@@ -3,14 +3,13 @@ import time
 import re
 import random
 import requests
-import os
-import json
+import urllib.parse
 
 class AiTranslator:
     def __init__(self):
-        # Konfigurasi Session untuk API Utama (GPT Chat)
-        self.gptchat_cookie = None
-        self.gptchat_csrf = None
+        # Konfigurasi API Utama (Deepseek Custom Endpoint)
+        self.main_api_base = 'http://141.11.113.69:30111/chat/deepseek'
+        self.current_chat_id = None # Menyimpan ID sesi untuk 1 chapter
         
         # Konfigurasi API Fallback 1 (DeepSeek Proxy)
         self.fallback_url = 'https://llmproxy.org/api/chat.php'
@@ -29,6 +28,11 @@ class AiTranslator:
             "special characters, emojis, bullet points, numbering, decorative marks, or formatting that do "
             "not exist in the source text."
         )
+
+    def reset_chapter_session(self):
+        """Panggil ini setiap kali pindah chapter agar ID chat direset ke None."""
+        self.current_chat_id = None
+        print("[System] Sesi Chat ID Translator direset untuk chapter baru.")
 
     def _get_fallback_headers(self):
         """Membuat header dinamis dengan IP acak untuk fallback 1."""
@@ -70,104 +74,6 @@ class AiTranslator:
             + f"\n{self.SEPARATOR}\n".join(batch_texts)
         )
 
-    def _get_gptchat_session(self):
-        """Metode untuk mendapatkan Cookie dan CSRF Token layaknya fungsi getSessionData di JS"""
-        print("[System] 🔑 Mengambil session GPT Chat...")
-        try:
-            response = requests.get('https://gpt.chat', timeout=15)
-            response.raise_for_status()
-
-            # Ekstrak Cookie
-            cookies = response.cookies
-            self.gptchat_cookie = '; '.join([f"{c.name}={c.value}" for c in cookies])
-            
-            # Ekstrak CSRF Token menggunakan Regex (pengganti cheerio)
-            match = re.search(r'<meta\s+name="csrf-token"\s+content="([^"]+)"', response.text)
-            if match:
-                self.gptchat_csrf = match.group(1)
-                print("[System] ✅ Session GPT Chat didapat")
-            else:
-                raise ValueError("CSRF Token tidak ditemukan di HTML")
-                
-        except Exception as e:
-            print(f"[Error] Gagal mengambil session: {e}")
-            self.gptchat_cookie = None
-            self.gptchat_csrf = None
-
-    def _gptchat_translate(self, prompt_text):
-        """Metode Utama menggunakan GPT Chat API Scraper."""
-        print("[System] 📤 Memulai sesi API Utama via GPT Chat...")
-        
-        # Ambil session jika belum ada
-        if not self.gptchat_cookie or not self.gptchat_csrf:
-            self._get_gptchat_session()
-            
-        # Jika gagal mengambil session, abort
-        if not self.gptchat_cookie or not self.gptchat_csrf:
-            print("[Error] Session tidak valid, skip GPT Chat.")
-            return None
-
-        headers = {
-            'Accept': '*/*',
-            'Content-Type': 'application/json',
-            'Cookie': self.gptchat_cookie,
-            'Origin': 'https://gpt.chat',
-            'Referer': 'https://gpt.chat/chat',
-            'User-Agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36',
-            'X-Csrf-Token': self.gptchat_csrf
-        }
-
-        payload = {
-            'model': 'openai/gpt-5-mini', # Menyesuaikan default dari gptulti.js
-            'messages': [{'role': 'user', 'content': prompt_text}]
-        }
-
-        try:
-            response = requests.post(
-                'https://gpt.chat/api/chat',
-                headers=headers,
-                json=payload,
-                stream=True,
-                timeout=30
-            )
-            response.raise_for_status()
-
-            print("[System] 📥 Menerima stream Respons AI...")
-            full_response = ""
-            
-            # Parsing stream data
-            for line in response.iter_lines():
-                if line:
-                    decoded_line = line.decode('utf-8').strip()
-                    
-                    if not decoded_line or decoded_line.startswith(':'):
-                        continue
-                        
-                    if decoded_line.startswith('data: '):
-                        data_content = decoded_line.replace('data: ', '', 1).strip()
-                        
-                        if data_content == '[DONE]':
-                            break
-                            
-                        try:
-                            # Ekstrak json per chunk
-                            json_data = json.loads(data_content)
-                            content_chunk = json_data.get('choices', [{}])[0].get('delta', {}).get('content', '')
-                            if content_chunk:
-                                full_response += content_chunk
-                        except json.JSONDecodeError:
-                            continue # Skip chunk yang rusak (sama seperti catch {} di JS)
-
-            print("[System] ✅ Streaming GPT Chat Selesai")
-            return full_response.strip()
-
-        except Exception as e:
-            print(f"[Error] API GPT Chat gagal: {e}")
-            # Reset session agar batch selanjutnya mencoba request token baru
-            self.gptchat_cookie = None 
-            self.gptchat_csrf = None
-            return None
-
     def _fallback_translate(self, prompt_text):
         """Metode fallback 1 menggunakan DeepSeek via llmproxy."""
         print("[System] Memulai sesi Fallback 1 via DeepSeek...")
@@ -184,14 +90,12 @@ class AiTranslator:
                 self.fallback_url, 
                 headers=self._get_fallback_headers(), 
                 json=payload, 
-                timeout=30
+                timeout=45
             )
             response.raise_for_status()
             data = response.json()
             
             content = data.get('content', '')
-            
-            # Hapus tag <think>...</think> jika ada
             clean_content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL | re.IGNORECASE).strip()
             return clean_content
             
@@ -215,7 +119,7 @@ class AiTranslator:
             "runtime": "gemini",
             "message": prompt_text,
             "configuration": None,
-            "history": [],  # Dikosongkan agar tidak ada memori lintas-batch
+            "history": [],
             "language": "en",
             "sourcePage": "/gemini"
         }
@@ -225,7 +129,7 @@ class AiTranslator:
                 self.fallback_url_2, 
                 headers=headers, 
                 json=payload, 
-                timeout=30
+                timeout=45
             )
             response.raise_for_status()
             data = response.json()
@@ -243,16 +147,13 @@ class AiTranslator:
             
         translations = self._extract_translations(ai_response)
         
-        # Jika selaras, langsung kembalikan
         if len(translations) == len(batch):
             return translations
             
-        # Jika tidak selaras, coba pembersihan ekstra
         raw_lines = [line.strip() for line in ai_response.split('\n') if line.strip() and self.SEPARATOR not in line]
         if len(raw_lines) == len(batch):
             return [self._clean_part(l) for l in raw_lines]
             
-        # Jika tetap gagal, return None agar bisa dilanjut ke fallback berikutnya
         return None
 
     def translate_batch(self, texts):
@@ -268,19 +169,45 @@ class AiTranslator:
             translations = []
             
             try:
-                # 1. Coba API Utama (GPT Chat Baru)
-                ai_response = self._gptchat_translate(user_message)
-                translations = self._verify_and_clean(ai_response, batch)
+                # 1. Coba API Utama (Custom Deepseek Endpoint)
+                encoded_query = urllib.parse.quote(user_message)
+                req_url = f"{self.main_api_base}?q={encoded_query}"
+                
+                # Tambahkan ID jika sudah ada dari batch sebelumnya (di chapter yang sama)
+                if self.current_chat_id:
+                    req_url += f"&id={self.current_chat_id}"
+                    
+                response = requests.get(req_url, timeout=45)
+                response.raise_for_status()
+                data = response.json()
+                
+                if data.get('status') != 'success':
+                    raise ValueError(f"Status response API bukan success: {data}")
+                    
+                ai_response_data = data.get('ai_response', {})
+                if not ai_response_data.get('status'):
+                    raise ValueError(f"AI merespon dengan status false: {ai_response_data}")
+                    
+                result_data = ai_response_data.get('data', {})
+                ai_response_text = result_data.get('message', '')
+                
+                # Simpan chat_id untuk request batch berikutnya di chapter yang sama
+                new_chat_id = result_data.get('id')
+                if new_chat_id:
+                    self.current_chat_id = new_chat_id
+                
+                # Verifikasi hasil Utama
+                translations = self._verify_and_clean(ai_response_text, batch)
                 
                 if translations:
-                    print("=== RESPON UTAMA SUKSES ===")
+                    print(f"=== RESPON UTAMA SUKSES (Chat ID: {self.current_chat_id}) ===")
                 else:
-                    raise ValueError("Format teks dari API Utama GPT Chat berantakan.")
+                    raise ValueError("Format teks dari API Utama berantakan.")
                 
             except Exception as e:
                 print(f"[Warning] API Utama Bermasalah ({e}). Beralih ke Fallback 1...")
                 
-                # 2. Fallback 1 (DeepSeek)
+                # 2. Fallback 1 (DeepSeek Proxy)
                 ai_response = self._fallback_translate(user_message)
                 translations = self._verify_and_clean(ai_response, batch)
                 
@@ -326,4 +253,3 @@ class AiTranslator:
         lines = [line.strip() for line in response_text.split('\n') if line.strip()]
         translations = [self._clean_part(line) for line in lines]
         return translations if translations else [response_text]
-

@@ -364,6 +364,8 @@ def main():
     for ch_url in all_targets:
         print(f"\n[Scraper] Mengambil data halaman untuk: {ch_url}")
         
+        translator.reset_chapter_session() 
+        
         soup = fetch_chapter_soup(ch_url)
         if not soup:
             print("[Error] Gagal memuat halaman web. Melewati chapter ini...")
