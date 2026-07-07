@@ -3,6 +3,7 @@ import os
 import re
 import requests
 import zipfile
+import time
 import numpy as np
 import concurrent.futures
 from PIL import Image, ImageDraw, ImageFont
@@ -447,6 +448,7 @@ def main():
                 if (current_len + panjang_teks > 1000) or (len(current_batch) >= 25):
                     if current_batch: # Pastikan batch tidak kosong sebelum dikirim
                         hasil_terjemahan.extend(translator.translate_batch(current_batch))
+                        time.sleep(4)
                     current_batch = []
                     current_len = 0
                 

@@ -1,7 +1,5 @@
 # config.py
-URLMANGA = [""] 
-URLCHAPTER = [
-  "https://vymanga.net/read/checkmate-r/2247294"
-] 
+URLMANGA = ["https://vymanga.com/manga/haruka-tooki-ie"] 
+URLCHAPTER = [""] 
 
 FONT_PATH = "Roboto-Bold.ttf"
