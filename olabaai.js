@@ -19,7 +19,7 @@ async function kirimPesan(pesanText) {
   formData.append('adblock', 'No');
   formData.append('theme', 'light');
 
-  const res = await fetch('https://www.olabiba.com/php/message.php', {
+  const res = await fetch('https://cors-proxy-eight-ruddy.vercel.app/?url=https://www.olabiba.com/php/message.php', {
     method: 'POST',
     headers: HEADERS,
     body: formData
@@ -29,7 +29,7 @@ async function kirimPesan(pesanText) {
 }
 
 async function jalankanStream() {
-  const res = await fetch('https://www.olabiba.com/php/stream.php', {
+  const res = await fetch('https://cors-proxy-eight-ruddy.vercel.app/?url=https://www.olabiba.com/php/stream.php', {
     method: 'GET',
     headers: { ...HEADERS, 'accept': 'text/event-stream' }
   });

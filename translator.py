@@ -88,7 +88,7 @@ class AiTranslator:
 
         try:
             post_res = requests.post(
-                'https://cors-proxydev.wisp.uno/proxy?url=https://www.olabiba.com/php/message.php', 
+                'https://cors-proxy-eight-ruddy.vercel.app/?url=https://www.olabiba.com/php/message.php', 
                 headers=self.olabiba_headers, 
                 data=payload,
                 timeout=20
@@ -100,7 +100,7 @@ class AiTranslator:
             stream_headers['accept'] = 'text/event-stream'
             
             stream_res = requests.get(
-                'https://www.olabiba.com/php/stream.php',
+                'https://cors-proxy-eight-ruddy.vercel.app/?url=https://www.olabiba.com/php/stream.php',
                 headers=stream_headers,
                 stream=True,
                 timeout=30
