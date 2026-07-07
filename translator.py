@@ -1,4 +1,5 @@
 # translator.py
+import os
 import time
 import re
 import json
@@ -9,11 +10,16 @@ class AiTranslator:
     def __init__(self):
         # Konfigurasi API Utama (Groq)
         self.groq_api_url = 'https://api.groq.com/openai/v1/chat/completions'
-        self.groq_api_key = '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' # Hati-hati, sebaiknya gunakan environment variable untuk API key
-        self.groq_headers = {
-            'Content-Type': 'application/json',
-            'Authorization': f'Bearer {self.groq_api_key}'
-        }
+        
+        # Ambil list API Keys dari Environment Variable (format JSON array)
+        # Contoh isi ENV: GROQ_API_KEYS='["key1", "key2", "key3"]'
+        keys_env = os.getenv('GROQ_API_KEYS', '["MASUKKAN_KEY_DEFAULT_DISINI_JIKA_KOSONG"]')
+        
+        try:
+            self.groq_api_keys = json.loads(keys_env)
+        except json.JSONDecodeError:
+            print("[Error] Format GROQ_API_KEYS di env salah. Harus berupa JSON array.")
+            self.groq_api_keys = []
         
         # Konfigurasi API Fallback 1 (DeepSeek Proxy)
         self.fallback_url = 'https://llmproxy.org/api/chat.php'
@@ -173,7 +179,18 @@ class AiTranslator:
             translations = []
             
             try:
-                # 1. Coba API Utama (Groq API)
+                # Memastikan ada API key yang bisa dipakai
+                if not self.groq_api_keys:
+                    raise ValueError("List API Key Groq kosong atau salah format!")
+                    
+                # Pilih API Key secara acak SETIAP KALI ada request baru (untuk menghindari limit)
+                current_api_key = random.choice(self.groq_api_keys)
+                
+                groq_headers = {
+                    'Content-Type': 'application/json',
+                    'Authorization': f'Bearer {current_api_key}'
+                }
+
                 payload = {
                     "messages": [
                         {
@@ -188,14 +205,12 @@ class AiTranslator:
                     "stream": False
                 }
                 
-                response = requests.post(self.groq_api_url, headers=self.groq_headers, json=payload, timeout=30)
+                # Mengirim request ke API Groq menggunakan header yang terpilih secara acak
+                response = requests.post(self.groq_api_url, headers=groq_headers, json=payload, timeout=30)
                 response.raise_for_status()
                 data = response.json()
                 
-                # Ekstrak konten dari response JSON Groq
                 ai_response = data['choices'][0]['message']['content']
-                
-                # Verifikasi hasil Utama
                 translations = self._verify_and_clean(ai_response, batch)
                 
                 if translations:
@@ -206,7 +221,7 @@ class AiTranslator:
             except Exception as e:
                 print(f"[Warning] API Utama (Groq) Bermasalah ({e}). Beralih ke Fallback 1...")
                 
-                # 2. Fallback 1 (DeepSeek)
+                # Coba Fallback 1 (DeepSeek)
                 ai_response = self._fallback_translate(user_message)
                 translations = self._verify_and_clean(ai_response, batch)
                 
@@ -215,7 +230,7 @@ class AiTranslator:
                 else:
                     print("[Warning] Fallback 1 Gagal atau Format Berantakan. Beralih ke Fallback 2...")
                     
-                    # 3. Fallback 2 (TheTurboChat)
+                    # Coba Fallback 2 (TheTurboChat)
                     ai_response = self._fallback_translate_2(user_message)
                     translations = self._verify_and_clean(ai_response, batch)
                     
