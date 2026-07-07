@@ -7,13 +7,12 @@ import requests
 
 class AiTranslator:
     def __init__(self):
-        # Konfigurasi API Utama (Flat AI)
-        self.api_url = 'https://flatai.org/wp-admin/admin-ajax.php'
-        self.nonce = '2aa8686f00'
-        self.headers = {
-            'Origin': 'https://flatai.org',
-            'Referer': 'https://flatai.org/free-ai-chatbot-no-registration/',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        # Konfigurasi API Utama (Groq)
+        self.groq_api_url = 'https://api.groq.com/openai/v1/chat/completions'
+        self.groq_api_key = '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' # Hati-hati, sebaiknya gunakan environment variable untuk API key
+        self.groq_headers = {
+            'Content-Type': 'application/json',
+            'Authorization': f'Bearer {self.groq_api_key}'
         }
         
         # Konfigurasi API Fallback 1 (DeepSeek Proxy)
@@ -174,66 +173,38 @@ class AiTranslator:
             translations = []
             
             try:
-                # 1. Coba API Utama (Flat AI)
+                # 1. Coba API Utama (Groq API)
                 payload = {
-                    'action': 'my_chatbot',
-                    'nonce': self.nonce,
-                    'model': 'default',
-                    'system_message_content': self.instruction,
-                    'messages': json.dumps([{'role': 'user', 'content': user_message}])
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": user_message
+                        }
+                    ],
+                    "model": "llama-3.3-70b-versatile",
+                    "temperature": 1,
+                    "max_completion_tokens": 2061,
+                    "top_p": 1,
+                    "stream": False
                 }
                 
-                # Menggunakan stream=True untuk meniru behaviour Server-Sent Events dari Node.js
-                response = requests.post(self.api_url, headers=self.headers, data=payload, stream=True, timeout=45)
+                response = requests.post(self.groq_api_url, headers=self.groq_headers, json=payload, timeout=30)
                 response.raise_for_status()
+                data = response.json()
                 
-                ai_response = ""
-                stop_streaming = False
+                # Ekstrak konten dari response JSON Groq
+                ai_response = data['choices'][0]['message']['content']
                 
-                for line in response.iter_lines():
-                    if line:
-                        decoded_line = line.decode('utf-8').strip()
-                        if decoded_line.startswith('data:'):
-                            json_str = re.sub(r'^data:\s*', '', decoded_line)
-                            
-                            if not json_str or json_str == '[DONE]':
-                                continue
-                                
-                            try:
-                                parsed = json.loads(json_str)
-                                content = parsed.get('choices', [{}])[0].get('delta', {}).get('content')
-                                
-                                if content:
-                                    ai_response += content
-                                    
-                                    # Cek stop stream condition sama seperti di js
-                                    match = re.search(r'<memory>|\[USER\]', ai_response)
-                                    if match:
-                                        ai_response = ai_response[:match.start()].rstrip()
-                                        stop_streaming = True
-                                        break
-                                        
-                            except json.JSONDecodeError:
-                                pass # Abaikan jika gagal parse line ini
-                                
-                    if stop_streaming:
-                        break
-
-                ai_response = ai_response.strip()
-
-                if not ai_response:
-                    raise ValueError("API Utama merespon kosong.")
-                    
                 # Verifikasi hasil Utama
                 translations = self._verify_and_clean(ai_response, batch)
                 
                 if translations:
-                    print("=== RESPON UTAMA (FLAT AI) SUKSES ===")
+                    print("=== RESPON UTAMA (GROQ) SUKSES ===")
                 else:
                     raise ValueError("Format teks dari API Utama berantakan.")
                 
             except Exception as e:
-                print(f"[Warning] API Utama Bermasalah ({e}). Beralih ke Fallback 1...")
+                print(f"[Warning] API Utama (Groq) Bermasalah ({e}). Beralih ke Fallback 1...")
                 
                 # 2. Fallback 1 (DeepSeek)
                 ai_response = self._fallback_translate(user_message)
