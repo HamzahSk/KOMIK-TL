@@ -88,7 +88,7 @@ class AiTranslator:
 
         try:
             post_res = requests.post(
-                'https://www.olabiba.com/php/message.php', 
+                'https://cors-proxydev.wisp.uno/proxy?url=https://www.olabiba.com/php/message.php', 
                 headers=self.olabiba_headers, 
                 data=payload,
                 timeout=20
