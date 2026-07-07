@@ -429,7 +429,7 @@ def main():
                 kumpulan_teks.append(b['text'])
 
         # ==========================================
-        # FASE 4: Batch Translation (Limit 1000 Karakter/Batch)
+        # FASE 4: Batch Translation (Limit 1000 Karakter & Max 25 Teks/Batch)
         # ==========================================
         hasil_terjemahan = []
         if kumpulan_teks:
@@ -439,12 +439,12 @@ def main():
             current_len = 0
             
             for teks in kumpulan_teks:
-                # Asumsi panjang teks ditambah sedikit buffer (misal untuk spasi/pemisah)
                 panjang_teks = len(teks)
                 
-                # Jika ditambah teks ini melebihi 1000 karakter, kirim batch yang ada dulu
-                if current_len + panjang_teks > 1000 and current_batch:
-                    hasil_terjemahan.extend(translator.translate_batch(current_batch))
+                # Jika ditambah teks ini melebihi 1000 karakter ATAU jumlah teks di batch sudah 25
+                if (current_len + panjang_teks > 1000) or (len(current_batch) >= 25):
+                    if current_batch: # Pastikan batch tidak kosong sebelum dikirim
+                        hasil_terjemahan.extend(translator.translate_batch(current_batch))
                     current_batch = []
                     current_len = 0
                 
