@@ -218,21 +218,42 @@ class Typesetter:
                 
         return pil_img
 
-def download_image(url, save_path):
+def download_image(url, save_path, chapter_url=""):
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    }
+    
+    # Deteksi provider dari chapter_url untuk memasang Referer yang tepat
+    if "bbato" in chapter_url:
+        headers['Referer'] = "https://bbato.com/"
+    elif "vymanga" in chapter_url:
+        headers['Referer'] = "https://vymanga.com/"
+
     try:
-        res = requests.get(url, headers={'User-Agent': 'Mozilla/5.0'}, stream=True, timeout=15)
+        res = requests.get(url, headers=headers, stream=True, timeout=15)
         if res.status_code == 200:
             with open(save_path, 'wb') as f:
-                for chunk in res.iter_content(1024): f.write(chunk)
-            return True
-    except Exception: pass
+                for chunk in res.iter_content(1024): 
+                    if chunk: 
+                        f.write(chunk)
+            
+            # Validasi ekstra: Pastikan ukuran file bukan 0 byte
+            if os.path.getsize(save_path) > 0:
+                return True
+            else:
+                os.remove(save_path) # Hapus file kosong agar tidak membuat error OCR
+                return False
+    except Exception as e: 
+        pass
     return False
 
 # --- 1. Fungsi Mengunduh Saja ---
-def download_page(page, out_dir):
+def download_page(page, out_dir, chapter_url=""):
     idx = page['index']
     raw_path = os.path.join(out_dir, f"raw_{idx}.jpg")
-    if download_image(page['imageUrl'], raw_path):
+    
+    # Oper chapter_url ke download_image
+    if download_image(page['imageUrl'], raw_path, chapter_url):
         return raw_path
     return None
 
@@ -391,7 +412,7 @@ def main():
         downloaded_paths = {}
         with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
             future_to_page = {
-                executor.submit(download_page, page, out_dir): page['index'] 
+                executor.submit(download_page, page, out_dir, ch_url): page['index'] 
                 for page in pages
             }
             for future in concurrent.futures.as_completed(future_to_page):
