@@ -68,19 +68,19 @@ class AiTranslator:
             batches.append(current_batch)
         return batches
 
-        def _format_batch_text(self, batch_texts):
-            return (
-                f"INSTRUCTION: {self.instruction}\n\n"
-                f"ATURAN PENTING: Di bawah ini ada kumpulan teks komik yang dipisahkan oleh '{self.SEPARATOR}'. "
-                f"Teks-teks ini bisa berupa dialog bubble, SFX, atau campuran dari beberapa panel. "
-                f"Dialog antar bubble mungkin masih dalam satu percakapan yang sama—pastikan terjemahannya tetap nyambung "
-                f"secara alur dan karakter. Cermati dan bedakan mana dialog dan mana SFX sebelum menerjemahkan. "
-                f"Hasil akhir harus berupa teks terjemahan yang dipisahkan oleh '{self.SEPARATOR}' tanpa tambahan "
-                f"penjelasan, basa-basi, atau penomoran apa pun.\n\n"
-                f"TEKS SUMBER:\n\n"
-                + f"\n{self.SEPARATOR}\n".join(batch_texts)
-            )
-        
+    # PERBAIKAN: Indentasi dimundurkan agar sejajar dengan fungsi lainnya
+    def _format_batch_text(self, batch_texts):
+        return (
+            f"INSTRUCTION: {self.instruction}\n\n"
+            f"ATURAN PENTING: Di bawah ini ada kumpulan teks komik yang dipisahkan oleh '{self.SEPARATOR}'. "
+            f"Teks-teks ini bisa berupa dialog bubble, SFX, atau campuran dari beberapa panel. "
+            f"Dialog antar bubble mungkin masih dalam satu percakapan yang sama—pastikan terjemahannya tetap nyambung "
+            f"secara alur dan karakter. Cermati dan bedakan mana dialog dan mana SFX sebelum menerjemahkan. "
+            f"Hasil akhir harus berupa teks terjemahan yang dipisahkan oleh '{self.SEPARATOR}' tanpa tambahan "
+            f"penjelasan, basa-basi, atau penomoran apa pun.\n\n"
+            f"TEKS SUMBER:\n\n"
+            + f"\n{self.SEPARATOR}\n".join(batch_texts)
+        )
 
     def _fallback_translate(self, prompt_text):
         """Metode fallback 1 menggunakan DeepSeek via llmproxy."""

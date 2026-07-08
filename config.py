@@ -4,7 +4,7 @@ URLCHAPTER = ["https://vymanga.com/read/reverse-thinking/2853358"]  #["https://b
 # https://vymanga.com/manga/reverse-thinking
 
 FONT_PATH = "digistrip.ttf"
- 
+
 SELF_INSTRUCTION = """
 Terjemahkan teks komik hasil OCR ini ke bahasa Indonesia yang benar-benar natural dan hidup.
 Dialog harus seperti percakapan asli orang Indonesia—tangkap emosinya: marah, panik, sedih, gemas, sinis, dsb.
