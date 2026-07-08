@@ -21,12 +21,12 @@ class AiTranslator:
         self.SEPARATOR = '130495848'
         
         self.instruction = (
-            "Translate the text into natural, fluent Indonesian that sounds as if it were originally "
-            "written in Indonesian. Avoid literal, awkward, overly formal, or machine-translated phrasing. "
-            "Prioritize readability, immersion, and smooth flow while faithfully preserving the original "
-            "meaning, tone, and context. Keep all names and special terms unchanged. Do not add any symbols, "
-            "special characters, emojis, bullet points, numbering, decorative marks, or formatting that do "
-            "not exist in the source text."
+            "Terjemahkan teks komik hasil OCR ini ke bahasa Indonesia yang natural, hidup, dan emosional, "
+            "seolah komik ini aslinya berbahasa Indonesia. Dialog dan monolog harus mengalir seperti percakapan nyata, "
+            "bukan textbook atau terjemahan kaku. SFX wajib diterjemahkan ke padanan alami Indonesia (contoh: BAM→DOR, "
+            "THUMP→DEG, SLAM→BRAK, GASP→HAAH, CREAK→KRIET, SPLASH→BYUR). Jika ada typo atau teks rusak akibat OCR, "
+            "tafsirkan maksudnya berdasarkan bunyi dan konteks panel, lalu terjemahkan maknanya. Nama tokoh dan istilah khusus "
+            "jangan diubah. Jangan tambahkan simbol, emoji, atau format apa pun yang tidak ada di teks asli."
         )
 
     def reset_chapter_session(self):
