@@ -20,11 +20,11 @@ class OCREngine:
             params={
                 "Det.engine_type": EngineType.ONNXRUNTIME,
                 "Det.lang_type": LangDet.EN,               
-                "Det.model_type": ModelType.SMALL,         
+                "Det.model_type": ModelType.MEDIUM,         
                 "Det.ocr_version": OCRVersion.PPOCRV6,     
                 "Rec.engine_type": EngineType.ONNXRUNTIME, 
                 "Rec.lang_type": LangRec.EN,               
-                "Rec.model_type": ModelType.SMALL,         
+                "Rec.model_type": ModelType.MEDIUM,         
                 "Rec.ocr_version": OCRVersion.PPOCRV6,     
             }
         )
