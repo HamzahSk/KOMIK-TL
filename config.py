@@ -1,6 +1,7 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
+
     "https://vymanga.com/read/cant-think-straight/2851926",
 ]
 

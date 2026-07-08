@@ -32,30 +32,32 @@ class OCREngine:
         if img is None:
             return []
         
-        # 2. Upscale gambar 2x lipat agar teks kecil lebih tajam
+        # 2. Upscale 2x lipat (Ubah ke INTER_LANCZOS4 karena lebih tajam untuk teks dibanding CUBIC)
         new_width = img.shape[1] * 2
         new_height = img.shape[0] * 2
-        img_resized = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
+        img_resized = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_LANCZOS4)
         
         # 3. Ubah ke Grayscale
         gray_np = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
 
-        # 4. Terapkan CLAHE (Mempertegas kontras lokal sebelum binarization)
+        # 4. Terapkan CLAHE (Mempertegas kontras lokal, menjaga huruf pudar agar lebih tebal)
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
-        gray_clahe = clahe.apply(gray_np)
+        enhanced_img = clahe.apply(gray_np)
 
-        # 5. Binarization / Adaptive Thresholding
-        blur_np = cv2.GaussianBlur(gray_clahe, (5, 5), 0)
-        binary_np = cv2.adaptiveThreshold(
-            blur_np, 255, 
-            cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-            cv2.THRESH_BINARY, 11, 2
-        )
+        # 5. Denoising Ringan (Gunakan Median Blur daripada Gaussian Blur)
+        # Median Blur jauh lebih pintar membuang noise/bintik (salt-and-pepper) 
+        # di komik hasil scan tanpa membuat tepi teks menjadi buram.
+        clean_img = cv2.medianBlur(enhanced_img, 3)
 
-        # --- PERUBAHAN BARU ---
-        # Masukkan hasil binarization ke RapidOCR dengan use_cls=True untuk mengoreksi teks miring
-        out = self.reader(binary_np, use_det=True, use_cls=True, use_rec=True)
+        # --- Adaptive Thresholding DIHAPUS ---
+        # Kita langsung berikan gambar Grayscale yang sudah kontras & bersih ke RapidOCR
+
+        # Masukkan hasil preprocessing ke RapidOCR
+        out = self.reader(clean_img, use_det=True, use_cls=True, use_rec=True)
+        
         if not out: return []
+        
+        # ... (Kode ekstraksi kotak dan teks di bawahnya tetap sama seperti sebelumnya) ...
         
         raw_lines = []
         boxes, texts = [], []
