@@ -1,7 +1,7 @@
 # ocr_engine.py
 import re
+import cv2
 import numpy as np
-from PIL import Image
 from rapidocr import EngineType, LangDet, LangRec, ModelType, OCRVersion, RapidOCR
 
 class OCREngine:
@@ -10,29 +10,43 @@ class OCREngine:
             params={
                 "Det.engine_type": EngineType.ONNXRUNTIME,
                 "Det.lang_type": LangDet.EN,               
-                "Det.model_type": ModelType.MEDIUM,         
+                "Det.model_type": ModelType.SMALL,         
                 "Det.ocr_version": OCRVersion.PPOCRV6,     
                 "Rec.engine_type": EngineType.ONNXRUNTIME, 
                 "Rec.lang_type": LangRec.EN,               
-                "Rec.model_type": ModelType.MEDIUM,         
+                "Rec.model_type": ModelType.SMALL,         
                 "Rec.ocr_version": OCRVersion.PPOCRV6,     
             }
         )
 
     def detect_and_merge(self, img_path):
-        try:
-            img = Image.open(img_path).convert("RGB")
-        except Exception:
+        # 1. Buka gambar menggunakan OpenCV
+        img = cv2.imread(img_path)
+        if img is None:
             return []
         
-        # Upscale gambar 2x lipat agar teks kecil lebih tajam
-        new_size = (img.width * 2, img.height * 2)
-        img_resized = img.resize(new_size, Image.Resampling.BICUBIC)
+        # 2. Upscale gambar 2x lipat agar teks kecil lebih tajam
+        new_width = img.shape[1] * 2
+        new_height = img.shape[0] * 2
+        img_resized = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
         
-        # Ubah ke Grayscale (Hitam Putih)
-        gray_np = np.array(img_resized.convert("L"))
+        # 3. Ubah ke Grayscale
+        gray_np = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
 
-        out = self.reader(gray_np)
+        # 4. Terapkan CLAHE (Mempertegas kontras lokal sebelum binarization)
+        clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
+        gray_clahe = clahe.apply(gray_np)
+
+        # 5. Binarization / Adaptive Thresholding (Ini yang jadi 2_hasil_binary.jpg)
+        blur_np = cv2.GaussianBlur(gray_clahe, (5, 5), 0)
+        binary_np = cv2.adaptiveThreshold(
+            blur_np, 255, 
+            cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+            cv2.THRESH_BINARY, 11, 2
+        )
+
+        # Masukkan hasil binarization ke RapidOCR
+        out = self.reader(binary_np)
         if not out: return []
         
         raw_lines = []
@@ -122,4 +136,3 @@ class OCREngine:
                 })
                 
         return merged
-        
