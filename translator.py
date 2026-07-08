@@ -21,12 +21,15 @@ class AiTranslator:
         self.SEPARATOR = '130495848'
         
         self.instruction = (
-            "Terjemahkan teks komik hasil OCR ini ke bahasa Indonesia yang natural, hidup, dan emosional, "
-            "seolah komik ini aslinya berbahasa Indonesia. Dialog dan monolog harus mengalir seperti percakapan nyata, "
-            "bukan textbook atau terjemahan kaku. SFX wajib diterjemahkan ke padanan alami Indonesia (contoh: BAM→DOR, "
-            "THUMP→DEG, SLAM→BRAK, GASP→HAAH, CREAK→KRIET, SPLASH→BYUR). Jika ada typo atau teks rusak akibat OCR, "
-            "tafsirkan maksudnya berdasarkan bunyi dan konteks panel, lalu terjemahkan maknanya. Nama tokoh dan istilah khusus "
-            "jangan diubah. Jangan tambahkan simbol, emoji, atau format apa pun yang tidak ada di teks asli."
+    "Terjemahkan teks komik hasil OCR ini ke bahasa Indonesia yang benar-benar natural dan hidup. "
+    "Dialog harus seperti percakapan asli orang Indonesia—tangkap emosinya: marah, panik, sedih, gemas, sinis, dsb. "
+    "Jangan terjemahkan kata per kata atau kaku seperti mesin. Jika ada typo/teks rusak, tafsirkan maksudnya "
+    "dari bunyi dan konteks panel komik, lalu terjemahkan maknanya dengan tepat. Jangan dibiarkan aneh. "
+    "KHUSUS SFX: terjemahkan ke bunyi alami bahasa Indonesia, bukan deskripsi. Contoh: BAM→DOR, SLAM→BRAK, "
+    "THUMP→DEG, WHOOSH→SYUUUT, GASP→HAAH, CREAK→KRIET, SPLASH→BYUR, GRAB→SREET, BOOM→DUAR, "
+    "RUSTLE→GRESIK, CLAP→PROK, STEP→TAP, STARE→NATAP. SFX yang tampak seperti kata kerja biasa pun "
+    "harus dikenali dan diubah jadi bunyi, bukan diterjemahkan harfiah. Nama tokoh/tempat tetap persis aslinya. "
+    "Jangan tambahkan simbol, emoji, bullet, atau format apa pun yang tidak ada di teks sumber."
         )
 
     def reset_chapter_session(self):
@@ -70,7 +73,8 @@ class AiTranslator:
         return (
             f"INSTRUCTION: {self.instruction}\n\n"
             f"ATURAN MUTLAK: Pisahkan tiap baris terjemahan HANYA dengan {self.SEPARATOR}. Dilarang keras menambah penjelasan, basa-basi, atau awalan angka. INGAT TERJEMAHKAN KEBAHASA INDONESIA \n"
-            f"Berikut teks nya: \n\n"
+            f"Hasil akhir harus langsung berupa teks terjemahan yang dipisahkan oleh '{self.SEPARATOR}', tidak lebih.\n\n"
+            f"TEKS SUMBER:\n\n"
             + f"\n{self.SEPARATOR}\n".join(batch_texts)
         )
 
