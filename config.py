@@ -1,5 +1,5 @@
 # config.py
-URLMANGA = ["https://vymanga.com/manga/haruka-tooki-ie"] 
+URLMANGA = ["https://bbato.com/manga/bad-friend"] 
 URLCHAPTER = [""] 
 
 FONT_PATH = "Roboto-Bold.ttf"

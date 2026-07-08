@@ -1,74 +1,191 @@
-# scraper.py
 import requests
+import json
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlparse
 
-BASE_URL = "https://vymanga.net"
+# Konfigurasi Domain
+VYMANGA_URL = "https://vymanga.com"
+BBATO_URL = "https://bbato.com"
 CORS_PROXY = "https://cors-proxy1.rockyyrec.workers.dev/?url="
-HEADERS = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
+
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+}
+
+
+def detect_provider(url):
+    """Menentukan provider berdasarkan substring domain pada URL."""
+    if "vymanga.net" in url:
+        return "vymanga"
+    return "bbato"
+
 
 def get_chapter_list(manga_url):
     try:
-        target_url = f"{CORS_PROXY}{manga_url}"
-        res = requests.get(target_url, headers=HEADERS, timeout=15)
-        soup = BeautifulSoup(res.text, 'html.parser')
+        provider = detect_provider(manga_url)
         
-        chapters = []
-        for a in soup.select('.list-group > a'):
-            href = a.get('href')
-            span = a.find('span')
-            name = span.text.strip() if span else "Unknown_Chapter"
+        # --- LOGIKA UNTUK VYMANGA ---
+        if provider == "vymanga":
+            target_url = f"{CORS_PROXY}{manga_url}"
+            res = requests.get(target_url, headers=HEADERS, timeout=15)
+            soup = BeautifulSoup(res.text, 'html.parser')
             
-            if href:
+            chapters = []
+            for a in soup.select('.list-group > a'):
+                href = a.get('href')
+                span = a.find('span')
+                name = span.text.strip() if span else "Unknown_Chapter"
+                
+                if href:
+                    chapters.append({
+                        'url': urljoin(VYMANGA_URL, href),
+                        'name': name
+                    })
+            return chapters
+
+        # --- LOGIKA UNTUK BBATO ---
+        else:
+            # Ambil slug/id paling akhir dari URL manga
+            slug = manga_url.strip("/").split("/")[-1]
+            
+            # Setup headers khusus XMLHttpRequest milik bbato untuk bypass 403
+            bbato_headers = HEADERS.copy()
+            bbato_headers.update({
+                'Accept': 'application/json, text/javascript, */*; q=0.01',
+                'X-Requested-With': 'XMLHttpRequest',
+                'Referer': manga_url
+            })
+            
+            api_url = f"{BBATO_URL}/get-chapter-list?slug={slug}"
+            res = requests.get(api_url, headers=bbato_headers, timeout=15)
+            res_json = res.json()
+            
+            if 'data' not in res_json or not isinstance(res_json['data'], list):
+                return []
+                
+            chapters = []
+            for ch in res_json['data']:
+                # Bikin URL absolut untuk chapter read bbato
+                ch_url = f"{BBATO_URL}/read/{slug}/{ch.get('chapter_slug')}"
                 chapters.append({
-                    'url': urljoin(BASE_URL, href),
-                    'name': name
+                    'url': ch_url,
+                    'name': ch.get('chapter_name', 'Unknown_Chapter')
                 })
-        return chapters
+            return chapters
+
     except Exception as e:
         print(f"[Error] Gagal mengambil detail manga: {e}")
         return []
 
-# --- PERUBAHAN DIMULAI DI SINI ---
 
 def fetch_chapter_soup(chapter_url):
     """Fungsi pembantu untuk fetch dan parse HTML menjadi objek soup hanya 1 kali."""
     try:
-        target_url = f"{CORS_PROXY}{chapter_url}"
-        res = requests.get(target_url, headers=HEADERS, timeout=15)
-        res.raise_for_status() # Pastikan status code 200 OK
+        provider = detect_provider(chapter_url)
+        
+        # VyManga mewajibkan CORS Proxy, sedangkan Bbato menggunakan direct request dengan Referer
+        if provider == "vymanga":
+            target_url = f"{CORS_PROXY}{chapter_url}"
+            res = requests.get(target_url, headers=HEADERS, timeout=15)
+        else:
+            bbato_headers = HEADERS.copy()
+            bbato_headers['Referer'] = f"{BBATO_URL}/"
+            res = requests.get(chapter_url, headers=bbato_headers, timeout=15)
+            
+        res.raise_for_status()
         return BeautifulSoup(res.text, 'html.parser')
     except Exception as e:
         print(f"[Error] Gagal mengambil URL chapter: {e}")
         return None
 
-def get_page_list(soup):
-    """Mengambil list gambar dari objek soup"""
+
+def get_page_list(soup, chapter_url=""):
+    """Mengambil list gambar dari objek soup (Mendukung VyManga & Bbato)"""
     if not soup:
         return []
     
     pages = []
     try:
-        for idx, img in enumerate(soup.select('img.d-block')):
-            img_url = img.get('data-src') or img.get('src')
-            if img_url:
-                pages.append({'index': idx, 'imageUrl': urljoin(BASE_URL, img_url)})
+        provider = detect_provider(chapter_url)
+        
+        # --- LOGIKA UNTUK VYMANGA ---
+        if provider == "vymanga":
+            for idx, img in enumerate(soup.select('img.d-block')):
+                img_url = img.get('data-src') or img.get('src')
+                if img_url:
+                    pages.append({'index': idx, 'imageUrl': urljoin(VYMANGA_URL, img_url)})
+                    
+        # --- LOGIKA UNTUK BBATO ---
+        else:
+            # Mengabaikan notice-page sesuai selektor Tachiyomi asli
+            for idx, img in enumerate(soup.select('.pages .page:not(.notice-page) img')):
+                img_url = img.get('data-src') or img.get('src')
+                if img_url:
+                    # Pastikan url gambar absolut
+                    if not img_url.startswith('http'):
+                        img_url = urljoin(BBATO_URL, img_url)
+                    pages.append({'index': idx, 'imageUrl': img_url})
+                    
         return pages
     except Exception as e:
         print(f"[Error] Gagal memproses halaman chapter: {e}")
         return []
 
-def get_chapter_name(soup):
-    """Mengambil nama chapter dari div id='chapter-info'"""
+
+def get_chapter_name(soup, chapter_url=""):
+    """Mengambil nama chapter dari DOM (Mendukung VyManga & Bbato)"""
     if not soup:
         return "Unknown Chapter"
         
     try:
-        # Mencari <div id="chapter-info">
-        info_div = soup.find('div', id='chapter-info')
-        if info_div:
-            return info_div.text.strip()
+        provider = detect_provider(chapter_url) if chapter_url else None
+        
+        # --- LOGIKA UNTUK BBATO ---
+        if provider == "bbato":
+            # Cari semua script yang bertipe application/ld+json
+            scripts = soup.find_all('script', type='application/ld+json')
+            for script in scripts:
+                if script.string:
+                    try:
+                        # Parse string JSON di dalam tag script
+                        data = json.loads(script.string)
+                        
+                        # Pastikan ini adalah struktur BreadcrumbList
+                        if data.get("@type") == "BreadcrumbList":
+                            items = data.get("itemListElement", [])
+                            if items:
+                                # Chapter name biasanya ada di urutan terakhir array itemListElement
+                                return items[-1].get("name", "Unknown Chapter")
+                    except json.JSONDecodeError:
+                        # Lanjutkan pencarian jika format JSON tidak valid
+                        continue
+
+        # --- LOGIKA UNTUK VYMANGA ---
+        elif provider == "vymanga":
+            info_div = soup.find('div', id='chapter-info')
+            if info_div:
+                return info_div.text.strip()
+                
+        # --- FALLBACK JIKA PROVIDER TIDAK DITEMUKAN ---
+        else:
+            # Coba logika VyManga terlebih dahulu
+            info_div = soup.find('div', id='chapter-info')
+            if info_div:
+                return info_div.text.strip()
+                
+            # Coba logika Bbato
+            scripts = soup.find_all('script', type='application/ld+json')
+            for script in scripts:
+                if script.string:
+                    try:
+                        data = json.loads(script.string)
+                        if data.get("@type") == "BreadcrumbList" and data.get("itemListElement"):
+                            return data["itemListElement"][-1].get("name", "Unknown Chapter")
+                    except json.JSONDecodeError:
+                        continue
+
         return "Unknown Chapter"
+
     except Exception as e:
         print(f"[Error] Gagal memproses nama chapter: {e}")
         return "Unknown Chapter"
