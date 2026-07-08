@@ -21,15 +21,14 @@ class AiTranslator:
         self.SEPARATOR = '130495848'
         
         self.instruction = (
-    "Terjemahkan teks komik hasil OCR ini ke bahasa Indonesia yang benar-benar natural dan hidup. "
-    "Dialog harus seperti percakapan asli orang Indonesia—tangkap emosinya: marah, panik, sedih, gemas, sinis, dsb. "
-    "Jangan terjemahkan kata per kata atau kaku seperti mesin. Jika ada typo/teks rusak, tafsirkan maksudnya "
-    "dari bunyi dan konteks panel komik, lalu terjemahkan maknanya dengan tepat. Jangan dibiarkan aneh. "
-    "KHUSUS SFX: terjemahkan ke bunyi alami bahasa Indonesia, bukan deskripsi. Contoh: BAM→DOR, SLAM→BRAK, "
-    "THUMP→DEG, WHOOSH→SYUUUT, GASP→HAAH, CREAK→KRIET, SPLASH→BYUR, GRAB→SREET, BOOM→DUAR, "
-    "RUSTLE→GRESIK, CLAP→PROK, STEP→TAP, STARE→NATAP. SFX yang tampak seperti kata kerja biasa pun "
-    "harus dikenali dan diubah jadi bunyi, bukan diterjemahkan harfiah. Nama tokoh/tempat tetap persis aslinya. "
-    "Jangan tambahkan simbol, emoji, bullet, atau format apa pun yang tidak ada di teks sumber."
+    "Terjemahkan teks komik hasil OCR ini ke bahasa Indonesia yang natural, hidup, dan emosional, "
+    "seolah komik ini aslinya berbahasa Indonesia. Dialog dan monolog harus mengalir seperti percakapan nyata, "
+    "bukan textbook atau terjemahan kaku. Hindari kata 'lu/gue' atau slang berlebihan yang terkesan tidak profesional; "
+    "gunakan 'aku/kamu/kau' atau 'saya/Anda' sesuai konteks karakter. SFX wajib diterjemahkan ke padanan alami Indonesia "
+    "(contoh: BAM→DOR, THUMP→DEG, SLAM→BRAK, GASP→HAAH, CREAK→KRIET, SPLASH→BYUR). Jika ada typo atau teks rusak "
+    "akibat OCR, tafsirkan maksudnya berdasarkan bunyi dan konteks panel, lalu terjemahkan maknanya. "
+    "Nama tokoh dan istilah khusus jangan diubah. Jangan tambahkan simbol, emoji, atau format apa pun "
+    "yang tidak ada di teks asli."
         )
 
     def reset_chapter_session(self):
@@ -69,14 +68,19 @@ class AiTranslator:
             batches.append(current_batch)
         return batches
 
-    def _format_batch_text(self, batch_texts):
-        return (
-            f"INSTRUCTION: {self.instruction}\n\n"
-            f"ATURAN MUTLAK: Pisahkan tiap baris terjemahan HANYA dengan {self.SEPARATOR}. Dilarang keras menambah penjelasan, basa-basi, atau awalan angka. INGAT TERJEMAHKAN KEBAHASA INDONESIA \n"
-            f"Hasil akhir harus langsung berupa teks terjemahan yang dipisahkan oleh '{self.SEPARATOR}', tidak lebih.\n\n"
-            f"TEKS SUMBER:\n\n"
-            + f"\n{self.SEPARATOR}\n".join(batch_texts)
-        )
+        def _format_batch_text(self, batch_texts):
+            return (
+        f"INSTRUCTION: {self.instruction}\n\n"
+        f"ATURAN PENTING: Di bawah ini ada kumpulan teks komik yang dipisahkan oleh '{self.SEPARATOR}'. "
+        f"Teks-teks ini bisa berupa dialog bubble, SFX, atau campuran dari beberapa panel. "
+        f"Dialog antar bubble mungkin masih dalam satu percakapan yang sama—pastikan terjemahannya tetap nyambung "
+        f"secara alur dan karakter. Cermati dan bedakan mana dialog dan mana SFX sebelum menerjemahkan. "
+        f"Hasil akhir harus berupa teks terjemahan yang dipisahkan oleh '{self.SEPARATOR}' tanpa tambahan "
+        f"penjelasan, basa-basi, atau penomoran apa pun.\n\n"
+        f"TEKS SUMBER:\n\n"
+        + f"\n{self.SEPARATOR}\n".join(batch_texts)
+            )
+        
 
     def _fallback_translate(self, prompt_text):
         """Metode fallback 1 menggunakan DeepSeek via llmproxy."""
