@@ -73,15 +73,23 @@ class Typesetter:
                 cw = draw.textbbox((0, 0), line, font=font)[2] - draw.textbbox((0, 0), line, font=font)[0]
                 cx = box[0] + (bw - cw) // 2
                 
+                # --- PERUBAHAN OPTIMASI PILLOW ---
                 if is_single_word:
                     stroke_w = max(2, int(font_size * 0.12))
                 else:
                     stroke_w = max(1, int(font_size * 0.05))
                 
-                for adj_x in range(-stroke_w, stroke_w + 1):
-                    for adj_y in range(-stroke_w, stroke_w + 1):
-                        draw.text((cx + adj_x, current_y + adj_y), line, font=font, fill=block['colors'][1])
-                draw.text((cx, current_y), line, font=font, fill=block['colors'][0])
+                # Menggunakan parameter bawaan Pillow yang lebih cepat daripada looping manual X dan Y
+                draw.text(
+                    (cx, current_y), 
+                    line, 
+                    font=font, 
+                    fill=block['colors'][0], 
+                    stroke_width=stroke_w, 
+                    stroke_fill=block['colors'][1]
+                )
+                # ---------------------------------
+                
                 current_y += line_height
                 
         return pil_img
@@ -211,4 +219,3 @@ def merge_short_images(raw_paths, target_height=2200, max_workers=6):
         merged_paths.append(results[i])
         
     return merged_paths
-    

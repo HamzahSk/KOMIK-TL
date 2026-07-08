@@ -12,6 +12,13 @@ class OCREngine:
                 "Det.lang_type": LangDet.EN,               
                 "Det.model_type": ModelType.SMALL,         
                 "Det.ocr_version": OCRVersion.PPOCRV6,     
+                
+                # --- TAMBAHAN BARU ---
+                # Menambahkan parameter Cls untuk mendeteksi kemiringan/orientasi teks
+                "Cls.engine_type": EngineType.ONNXRUNTIME,
+                "Cls.model_type": ModelType.MOBILE,  # Menggunakan versi mobile sesuai standar default terbaru
+                # ---------------------
+                
                 "Rec.engine_type": EngineType.ONNXRUNTIME, 
                 "Rec.lang_type": LangRec.EN,               
                 "Rec.model_type": ModelType.SMALL,         
@@ -37,7 +44,7 @@ class OCREngine:
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
         gray_clahe = clahe.apply(gray_np)
 
-        # 5. Binarization / Adaptive Thresholding (Ini yang jadi 2_hasil_binary.jpg)
+        # 5. Binarization / Adaptive Thresholding
         blur_np = cv2.GaussianBlur(gray_clahe, (5, 5), 0)
         binary_np = cv2.adaptiveThreshold(
             blur_np, 255, 
@@ -45,32 +52,24 @@ class OCREngine:
             cv2.THRESH_BINARY, 11, 2
         )
 
-        # Masukkan hasil binarization ke RapidOCR
-        out = self.reader(binary_np)
+        # --- PERUBAHAN BARU ---
+        # Masukkan hasil binarization ke RapidOCR dengan use_cls=True untuk mengoreksi teks miring
+        out = self.reader(binary_np, use_det=True, use_cls=True, use_rec=True)
         if not out: return []
         
         raw_lines = []
         boxes, texts = [], []
 
-        # Ekstraksi Data RapidOCR
-        if isinstance(out, (tuple, list)):
+        # Ekstraksi Data RapidOCR yang sudah disederhanakan
+        if hasattr(out, 'boxes') and hasattr(out, 'txts') and out.boxes is not None:
+            boxes, texts = out.boxes, out.txts
+        # Fallback jika output berbentuk tuple/list (versi lama)
+        elif isinstance(out, (tuple, list)):
             iterable_result = out[0] if isinstance(out, tuple) else out
             for item in iterable_result:
-                if len(item) >= 2:
+                if isinstance(item, (list, tuple)) and len(item) >= 2:
                     boxes.append(item[0])
                     texts.append(item[1])
-        else:
-            if hasattr(out, 'boxes') and hasattr(out, 'txts'):
-                boxes, texts = out.boxes, out.txts
-            elif hasattr(out, 'dt_boxes') and hasattr(out, 'rec_res'):
-                boxes = out.dt_boxes
-                texts = [res[0] if isinstance(res, (tuple, list)) else res for res in out.rec_res]
-            else:
-                raw_list = getattr(out, 'result', getattr(out, 'res', getattr(out, 'ocr_res', [])))
-                for item in raw_list:
-                    if isinstance(item, (list, tuple)) and len(item) >= 2:
-                        boxes.append(item[0])
-                        texts.append(item[1])
 
         # Post-Processing
         for bbox, text in zip(boxes, texts):
