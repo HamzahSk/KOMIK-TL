@@ -69,7 +69,7 @@ class AiTranslator:
     def _format_batch_text(self, batch_texts):
         return (
             f"INSTRUCTION: {self.instruction}\n\n"
-            f"ATURAN MUTLAK: Pisahkan tiap baris terjemahan HANYA dengan {self.SEPARATOR}. Dilarang keras menambah penjelasan, basa-basi, atau awalan angka."
+            f"ATURAN MUTLAK: Pisahkan tiap baris terjemahan HANYA dengan {self.SEPARATOR}. Dilarang keras menambah penjelasan, basa-basi, atau awalan angka. INGAT TERJEMAHKAN KEBAHASA INDONESIA \n"
             f"Berikut teks nya: \n\n"
             + f"\n{self.SEPARATOR}\n".join(batch_texts)
         )

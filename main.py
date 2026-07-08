@@ -191,7 +191,7 @@ class Typesetter:
                         current_line = [word]
                 if current_line: lines.append(' '.join(current_line))
                 
-                line_height = font.getbbox("A")[3] - font.getbbox("A")[1] + 3
+                line_height = font.getbbox("A")[3] - font.getbbox("A")[1] + int(font_size * 0.25)
                 total_height = len(lines) * line_height
                 
                 if total_height <= bh * 0.95:
