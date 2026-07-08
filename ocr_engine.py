@@ -15,6 +15,7 @@ class OCREngine:
                 
                 # --- TAMBAHAN BARU ---
                 # Menambahkan parameter Cls untuk mendeteksi kemiringan/orientasi teks
+                "Cls.ocr_version": OCRVersion.PPOCRV5,
                 "Cls.engine_type": EngineType.ONNXRUNTIME,
                 "Cls.model_type": ModelType.MOBILE,  # Menggunakan versi mobile sesuai standar default terbaru
                 # ---------------------
