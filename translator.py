@@ -21,14 +21,14 @@ class AiTranslator:
         self.SEPARATOR = '130495848'
         
         self.instruction = (
-    "Terjemahkan teks komik hasil OCR ini ke bahasa Indonesia yang natural, hidup, dan emosional, "
-    "seolah komik ini aslinya berbahasa Indonesia. Dialog dan monolog harus mengalir seperti percakapan nyata, "
-    "bukan textbook atau terjemahan kaku. Hindari kata 'lu/gue' atau slang berlebihan yang terkesan tidak profesional; "
-    "gunakan 'aku/kamu/kau' atau 'saya/Anda' sesuai konteks karakter. SFX wajib diterjemahkan ke padanan alami Indonesia "
-    "(contoh: BAM→DOR, THUMP→DEG, SLAM→BRAK, GASP→HAAH, CREAK→KRIET, SPLASH→BYUR). Jika ada typo atau teks rusak "
-    "akibat OCR, tafsirkan maksudnya berdasarkan bunyi dan konteks panel, lalu terjemahkan maknanya. "
-    "Nama tokoh dan istilah khusus jangan diubah. Jangan tambahkan simbol, emoji, atau format apa pun "
-    "yang tidak ada di teks asli."
+            "Terjemahkan teks komik hasil OCR ini ke bahasa Indonesia yang natural, hidup, dan emosional, "
+            "seolah komik ini aslinya berbahasa Indonesia. Dialog dan monolog harus mengalir seperti percakapan nyata, "
+            "bukan textbook atau terjemahan kaku. Hindari kata 'lu/gue' atau slang berlebihan yang terkesan tidak profesional; "
+            "gunakan 'aku/kamu/kau' atau 'saya/Anda' sesuai konteks karakter. SFX wajib diterjemahkan ke padanan alami Indonesia "
+            "(contoh: BAM→DOR, THUMP→DEG, SLAM→BRAK, GASP→HAAH, CREAK→KRIET, SPLASH→BYUR). Jika ada typo atau teks rusak "
+            "akibat OCR, tafsirkan maksudnya berdasarkan bunyi dan konteks panel, lalu terjemahkan maknanya. "
+            "Nama tokoh dan istilah khusus jangan diubah. Jangan tambahkan simbol, emoji, atau format apa pun "
+            "yang tidak ada di teks asli."
         )
 
     def reset_chapter_session(self):
@@ -70,15 +70,15 @@ class AiTranslator:
 
         def _format_batch_text(self, batch_texts):
             return (
-        f"INSTRUCTION: {self.instruction}\n\n"
-        f"ATURAN PENTING: Di bawah ini ada kumpulan teks komik yang dipisahkan oleh '{self.SEPARATOR}'. "
-        f"Teks-teks ini bisa berupa dialog bubble, SFX, atau campuran dari beberapa panel. "
-        f"Dialog antar bubble mungkin masih dalam satu percakapan yang sama—pastikan terjemahannya tetap nyambung "
-        f"secara alur dan karakter. Cermati dan bedakan mana dialog dan mana SFX sebelum menerjemahkan. "
-        f"Hasil akhir harus berupa teks terjemahan yang dipisahkan oleh '{self.SEPARATOR}' tanpa tambahan "
-        f"penjelasan, basa-basi, atau penomoran apa pun.\n\n"
-        f"TEKS SUMBER:\n\n"
-        + f"\n{self.SEPARATOR}\n".join(batch_texts)
+                f"INSTRUCTION: {self.instruction}\n\n"
+                f"ATURAN PENTING: Di bawah ini ada kumpulan teks komik yang dipisahkan oleh '{self.SEPARATOR}'. "
+                f"Teks-teks ini bisa berupa dialog bubble, SFX, atau campuran dari beberapa panel. "
+                f"Dialog antar bubble mungkin masih dalam satu percakapan yang sama—pastikan terjemahannya tetap nyambung "
+                f"secara alur dan karakter. Cermati dan bedakan mana dialog dan mana SFX sebelum menerjemahkan. "
+                f"Hasil akhir harus berupa teks terjemahan yang dipisahkan oleh '{self.SEPARATOR}' tanpa tambahan "
+                f"penjelasan, basa-basi, atau penomoran apa pun.\n\n"
+                f"TEKS SUMBER:\n\n"
+                + f"\n{self.SEPARATOR}\n".join(batch_texts)
             )
         
 

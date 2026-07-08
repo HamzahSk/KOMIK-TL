@@ -3,3 +3,154 @@
 %cd KOMIK-TL
 !pip install -r requirements.txt
 !pip install opencv-python-headless 
+
+130495848
+YOU KNOW WHAT I WAS THINKING WHEN YOU GOT ANGRY EARLIER, HYUNG?
+130495848
+YOU WERE REALLY FUNNY.
+130495848
+"YOU THINK I'M YOUR TOY?"
+130495848
+IF I ACTUALLY TREATED YOU LIKE A TOY, YOU WOULDN'T LAST A SECOND.
+130495848
+IT WAS FUNNY THAT YOU GOT UPSET OVER HOW I TREATED YOU.
+130495848
+FUCK, CUT"...
+Menggunakan API Key yang sudah ada untuk sesi: 22fec2c2-3d3c-4f8b-b0ee-369cc7efd138
+Menyimpan/Update API Key untuk sesi ID dari AI: 22fec2c2-3d3c-4f8b-b0ee-369cc7efd138
+Memproses pertanyaan: "INSTRUCTION: Terjemahkan teks komik hasil OCR ini ke bahasa Indonesia yang benar-benar natural dan hidup. Dialog harus seperti percakapan asli orang Indonesia—tangkap emosinya: marah, panik, sedih, gemas, sinis, dsb. Jangan terjemahkan kata per kata atau kaku seperti mesin. Jika ada typo/teks rusak, tafsirkan maksudnya dari bunyi dan konteks panel komik, lalu terjemahkan maknanya dengan tepat. Jangan dibiarkan aneh. KHUSUS SFX: terjemahkan ke bunyi alami bahasa Indonesia, bukan deskripsi. Contoh: BAM→DOR, SLAM→BRAK, THUMP→DEG, WHOOSH→SYUUUT, GASP→HAAH, CREAK→KRIET, SPLASH→BYUR, GRAB→SREET, BOOM→DUAR, RUSTLE→GRESIK, CLAP→PROK, STEP→TAP, STARE→NATAP. SFX yang tampak seperti kata kerja biasa pun harus dikenali dan diubah jadi bunyi, bukan diterjemahkan harfiah. Nama tokoh/tempat tetap persis aslinya. Jangan tambahkan simbol, emoji, bullet, atau format apa pun yang tidak ada di teks sumber.
+
+ATURAN MUTLAK: Pisahkan tiap baris terjemahan HANYA dengan 130495848. Dilarang keras menambah penjelasan, basa-basi, atau awalan angka. INGAT TERJEMAHKAN KEBAHASA INDONESIA 
+Hasil akhir harus langsung berupa teks terjemahan yang dipisahkan oleh '130495848', tidak lebih.
+
+TEKS SUMBER:
+
+DO NOT REPOST!
+130495848
+IF YOU ENJOYED THIS SERIES AND WANT A FASTER RELEASE
+130495848
+PLEASE READ ON MANGAGO.ME
+130495848
+THIS COMIC IS AN ADAD I AND DIFFERS FROM THE ORIGINAL.
+130495848
+THIS WORK CONTAINS ELEMENTS THAT MAY BE TRIGGERING. PLEASE TAKE CAUTION BEFORE READING.
+130495848
+THIS IS A WORK OF FICTION. ANY SIMILARITIES TO ACTUAL PERSONS, CORPORATIONS, OR ORGANIZATIONS IS ENTIRELY COINCIDENTAL.
+130495848
+SIT DOWN FIRST.
+130495848
+LET GO OF MY HAND.
+130495848
+I SAID SIT THE FUCK DOWN. I CAN'T STAND YOU LOOKING DOWN ON ME.
+130495848
+UGH!
+130495848
+IT'S A PAIN PUTTING UP WITH YOUR WHINING.
+130495848
+IF YOU'RE GONNA TALK, KEEP IT SHORT AND TO THE POINT.
+130495848
+WHY ARE YOU MAD?
+130495848
+HEY, I'M PISSED OFF BECAUSE OF YOUR SHITTY ATITUDE.
+130495848
+YOU HAVE SOME FUCKING NERVE. ACTING LIKE YOU'RE THE ONE THAT'S BEEN WRONGED.
+130495848
+DOYOU GET OOON TOYING WITH PELEI
+130495848
+YO TINK THIS SHIT SUNNNI SI
+130495848
+AM YOUR FUCKING
+130495848
+LET'S JUST GO IN THE ROOM, FOR NOW.
+130495848
+SLEEP FIRST, THEN WE'LL TALK.
+130495848
+AFTER SLEEPING?!
+130495848
+HEY, DON'T DODGE! I ANSWERED, SO NOW IT'S YOUR TURN.
+130495848
+YOU SERIOUSLY THOUGHT I WAS YOUR TOY?!
+130495848
+DO YOU EVEN SEE ME AS HAANI"...
+Menggunakan API Key acak untuk request baru.
+Menyimpan/Update API Key untuk sesi ID dari AI: 59fccb17-0726-4afa-820e-ee69b42ad1eb
+Memproses pertanyaan: "INSTRUCTION: Terjemahkan teks komik hasil OCR ini ke bahasa Indonesia yang benar-benar natural dan hidup. Dialog harus seperti percakapan asli orang Indonesia—tangkap emosinya: marah, panik, sedih, gemas, sinis, dsb. Jangan terjemahkan kata per kata atau kaku seperti mesin. Jika ada typo/teks rusak, tafsirkan maksudnya dari bunyi dan konteks panel komik, lalu terjemahkan maknanya dengan tepat. Jangan dibiarkan aneh. KHUSUS SFX: terjemahkan ke bunyi alami bahasa Indonesia, bukan deskripsi. Contoh: BAM→DOR, SLAM→BRAK, THUMP→DEG, WHOOSH→SYUUUT, GASP→HAAH, CREAK→KRIET, SPLASH→BYUR, GRAB→SREET, BOOM→DUAR, RUSTLE→GRESIK, CLAP→PROK, STEP→TAP, STARE→NATAP. SFX yang tampak seperti kata kerja biasa pun harus dikenali dan diubah jadi bunyi, bukan diterjemahkan harfiah. Nama tokoh/tempat tetap persis aslinya. Jangan tambahkan simbol, emoji, bullet, atau format apa pun yang tidak ada di teks sumber.
+
+ATURAN MUTLAK: Pisahkan tiap baris terjemahan HANYA dengan 130495848. Dilarang keras menambah penjelasan, basa-basi, atau awalan angka. INGAT TERJEMAHKAN KEBAHASA INDONESIA 
+Hasil akhir harus langsung berupa teks terjemahan yang dipisahkan oleh '130495848', tidak lebih.
+
+TEKS SUMBER:
+
+I'LL DELETE THE PHOTOS. SO GO INTO THE ROOM.
+130495848
+IT'S THE SAME AS NOW. DON'T TRY SWEET-TALKING ME, YOU SON OF A BITCH.
+130495848
+UGH... THAT'S IT! I'M TIRED!
+130495848
+FROM HOW YOU'RE ACTING, I DOUBT YOU'LL GIVE ME A STRAIGHT ANSWER.
+130495848
+WHY THE HELL AM BEING TREATED LIKE EHISS
+130495848
+WHAT DID I DO TO GET STUCK WITH A CRAZY BASTARD LIKE YOU...
+130495848
+I DON'T EVEN WANNA KNOW ANYMORE.
+130495848
+DONE TALKING?
+130495848
+I'LL DELETE THE PHOTOS.
+130495848
+LOOK.
+130495848
+EVERYTHING'S DELETED. JUST LIKE I PROMISED.
+130495848
+SO YOU KEEP YOUR PROMISE TOO, HYUNG.
+130495848
+FROM NOW ON, YOU'LL LIVE HERE.
+130495848
+PARK JUYEON..
+130495848
+YOU ASKED IF YOU'RE MY TOY, HYUNG..
+130495848
+I HAVEN'T EVEN TREATED YOU THAT BADLY.
+130495848
+MAYBE IN THE FUTURE, BUT RIGHT NOW, I HAVE NO INTENTION OF TOYING WITH YOU, HYUNG.
+130495848
+YOU'RE REALLY SAYING YOU'VE NEVER TREATED ME THAT BAD?
+130495848
+THEN, WHAT THE HELL WAS ALL THAT SHIT YOU'VE DONE T ME
+130495848
+THAT WAS ME JUST TESTING THE WATERS. NOTHING MORE THAN MINOR PRANKS.
+130495848
+BUT, YOU KNOW WHAT?
+130495848
+FOR SOME REASON, TODAY, YOU KEEP PUSHING MY BUTTONS, HYUNG.
+130495848
+HNH
+130495848
+WHAT ARE YOU COUNTING NO
+130495848
+WHAT IS THIS REACTION?"...
+Menggunakan API Key yang sudah ada untuk sesi: 59fccb17-0726-4afa-820e-ee69b42ad1eb
+Menyimpan/Update API Key untuk sesi ID dari AI: 59fccb17-0726-4afa-820e-ee69b42ad1eb
+Memproses pertanyaan: "INSTRUCTION: Terjemahkan teks komik hasil OCR ini ke bahasa Indonesia yang benar-benar natural dan hidup. Dialog harus seperti percakapan asli orang Indonesia—tangkap emosinya: marah, panik, sedih, gemas, sinis, dsb. Jangan terjemahkan kata per kata atau kaku seperti mesin. Jika ada typo/teks rusak, tafsirkan maksudnya dari bunyi dan konteks panel komik, lalu terjemahkan maknanya dengan tepat. Jangan dibiarkan aneh. KHUSUS SFX: terjemahkan ke bunyi alami bahasa Indonesia, bukan deskripsi. Contoh: BAM→DOR, SLAM→BRAK, THUMP→DEG, WHOOSH→SYUUUT, GASP→HAAH, CREAK→KRIET, SPLASH→BYUR, GRAB→SREET, BOOM→DUAR, RUSTLE→GRESIK, CLAP→PROK, STEP→TAP, STARE→NATAP. SFX yang tampak seperti kata kerja biasa pun harus dikenali dan diubah jadi bunyi, bukan diterjemahkan harfiah. Nama tokoh/tempat tetap persis aslinya. Jangan tambahkan simbol, emoji, bullet, atau format apa pun yang tidak ada di teks sumber.
+
+ATURAN MUTLAK: Pisahkan tiap baris terjemahan HANYA dengan 130495848. Dilarang keras menambah penjelasan, basa-basi, atau awalan angka. INGAT TERJEMAHKAN KEBAHASA INDONESIA 
+Hasil akhir harus langsung berupa teks terjemahan yang dipisahkan oleh '130495848', tidak lebih.
+
+TEKS SUMBER:
+
+II'IM GOING TO THE ROOM.
+130495848
+YOU KNOW WHAT I WAS THINKING WHEN YOU GOT ANGRY EARLIER, HYUNG?
+130495848
+YOU WERE REALLY FUNNY.
+130495848
+"YOU THINK I'M YOUR TOY?"
+130495848
+IF I ACTUALLY TREATED YOU LIKE A TOY, YOU WOULDN'T LAST A SECOND.
+130495848
+IT WAS FUNNY THAT YOU GOT UPSET OVER HOW I TREATED YOU.
+130495848
+FUCK, CUT"...
+Menggunakan API Key yang sudah ada untuk sesi: 59fccb17-0726-4afa-820e-ee69b42ad1eb
+Menyimpan/Update API Key untuk sesi ID dari AI: 59fccb17-0726-4afa-820e-ee69b42ad1eb
