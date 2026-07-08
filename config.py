@@ -1,6 +1,19 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
-URLCHAPTER = ["https://vymanga.com/read/reverse-thinking/2853358"]  #["https://bbato.com/read/soulbound/chapter-0"] 
+URLCHAPTER = [
+    "https://vymanga.com/read/cant-think-straight/2851913",
+    "https://vymanga.com/read/cant-think-straight/2851915",
+    "https://vymanga.com/read/cant-think-straight/2851916",
+    "https://vymanga.com/read/cant-think-straight/2851917",
+    "https://vymanga.com/read/cant-think-straight/2851919",
+    "https://vymanga.com/read/cant-think-straight/2851920",
+    "https://vymanga.com/read/cant-think-straight/2851922",
+    "https://vymanga.com/read/cant-think-straight/2851921",
+    "https://vymanga.com/read/cant-think-straight/2851923",
+    "https://vymanga.com/read/cant-think-straight/2851926",
+]
+
+ # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking
 
 FONT_PATH = "digistrip.ttf"
