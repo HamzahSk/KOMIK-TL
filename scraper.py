@@ -1,7 +1,7 @@
 import requests
 import json
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 
 # Konfigurasi Domain
 VYMANGA_URL = "https://vymanga.com"
@@ -14,10 +14,26 @@ HEADERS = {
 
 
 def detect_provider(url):
-    """Menentukan provider berdasarkan substring domain pada URL."""
-    if "vymanga.net" in url:
-        return "vymanga"
-    return "bbato"
+    """Menentukan provider: jika bukan bbato, berarti vymanga."""
+    if "bbato" in url.lower():
+        return "bbato"
+    return "vymanga"
+
+
+def fetch_with_fallback(url, headers, timeout=15):
+    """Coba fetch default dulu, kalau kena block/gagal baru pakai CORS."""
+    try:
+        # Coba request langsung
+        res = requests.get(url, headers=headers, timeout=timeout)
+        res.raise_for_status() # Melempar error jika status code 4xx atau 5xx (misal 403 Forbidden)
+        return res
+    except requests.RequestException:
+        # Jika gagal (kena block), fallback ke CORS proxy
+        print(f"[Info] Request langsung ke {url} gagal/terblokir. Beralih ke CORS proxy...")
+        target_url = f"{CORS_PROXY}{url}"
+        res_cors = requests.get(target_url, headers=headers, timeout=timeout)
+        res_cors.raise_for_status()
+        return res_cors
 
 
 def get_chapter_list(manga_url):
@@ -26,8 +42,8 @@ def get_chapter_list(manga_url):
         
         # --- LOGIKA UNTUK VYMANGA ---
         if provider == "vymanga":
-            target_url = f"{CORS_PROXY}{manga_url}"
-            res = requests.get(target_url, headers=HEADERS, timeout=15)
+            # Menggunakan fungsi fallback baru
+            res = fetch_with_fallback(manga_url, HEADERS, timeout=15)
             soup = BeautifulSoup(res.text, 'html.parser')
             
             chapters = []
@@ -57,7 +73,7 @@ def get_chapter_list(manga_url):
             })
             
             api_url = f"{BBATO_URL}/get-chapter-list?slug={slug}"
-            res = requests.get(api_url, headers=bbato_headers, timeout=15)
+            res = fetch_with_fallback(api_url, bbato_headers, timeout=15)
             res_json = res.json()
             
             if 'data' not in res_json or not isinstance(res_json['data'], list):
@@ -83,16 +99,13 @@ def fetch_chapter_soup(chapter_url):
     try:
         provider = detect_provider(chapter_url)
         
-        # VyManga mewajibkan CORS Proxy, sedangkan Bbato menggunakan direct request dengan Referer
         if provider == "vymanga":
-            target_url = f"{CORS_PROXY}{chapter_url}"
-            res = requests.get(target_url, headers=HEADERS, timeout=15)
+            res = fetch_with_fallback(chapter_url, HEADERS, timeout=15)
         else:
             bbato_headers = HEADERS.copy()
             bbato_headers['Referer'] = f"{BBATO_URL}/"
-            res = requests.get(chapter_url, headers=bbato_headers, timeout=15)
+            res = fetch_with_fallback(chapter_url, bbato_headers, timeout=15)
             
-        res.raise_for_status()
         return BeautifulSoup(res.text, 'html.parser')
     except Exception as e:
         print(f"[Error] Gagal mengambil URL chapter: {e}")
