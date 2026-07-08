@@ -10,7 +10,7 @@ img = cv2.imread(img_path)
 if img is None:
     print(f"Gagal membuka gambar: {img_path}")
     sys.exit()
-
+ 
 # 2. Upscale gambar 2x lipat agar teks kecil lebih tajam
 # cv2.INTER_CUBIC sangat disarankan untuk memperbesar gambar (upscaling)
 new_width = img.shape[1] * 2
