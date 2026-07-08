@@ -1,49 +1,55 @@
-from PIL import Image, ImageEnhance
-import numpy as np
+import cv2
+import sys
 
 img_path = "015.jpg"
 
-try:
-    img = Image.open(img_path).convert("RGB")
-except Exception as e:
-    print(f"Gagal membuka gambar: {e}")
-    exit()
+# 1. Buka gambar
+# cv2.imread otomatis mengubah gambar menjadi array NumPy (format BGR)
+img = cv2.imread(img_path)
 
-# 1. Upscale gambar 2x lipat agar teks kecil lebih tajam
-new_size = (img.width * 2, img.height * 2)
-img_resized = img.resize(new_size, Image.Resampling.BICUBIC)
+if img is None:
+    print(f"Gagal membuka gambar: {img_path}")
+    sys.exit()
 
-# 2. Pertajam gambar (Sharpen)
-# Biar pinggiran teks nggak "mbleber"
-enhancer_sharpness = ImageEnhance.Sharpness(img_resized)
-img_sharp = enhancer_sharpness.enhance(2.0) 
+# 2. Upscale gambar 2x lipat agar teks kecil lebih tajam
+# cv2.INTER_CUBIC sangat disarankan untuk memperbesar gambar (upscaling)
+new_width = img.shape[1] * 2
+new_height = img.shape[0] * 2
+img_resized = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
 
-# 3. Ubah ke Grayscale (Abu-abu)
-img_gray = img_sharp.convert("L")
+# 3. Ubah ke Grayscale (Hitam Putih / Abu-abu)
+gray_np = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
 
-# 4. Tingkatkan Kontras 
-# Biar tulisan makin gelap, background makin terang
-enhancer_contrast = ImageEnhance.Contrast(img_gray)
-img_contrast = enhancer_contrast.enhance(2.0) 
-
-# 5. Binarization / Thresholding (Opsional tapi SANGAT disarankan untuk OCR)
-# Mengubah pixel jadi murni Hitam (0) atau murni Putih (255). 
-# Angka 130 ini batasnya, bisa kamu naik-turunin (0-255) buat cari hasil terbaik.
-threshold_value = 130
-img_binary = img_contrast.point(lambda p: 255 if p > threshold_value else 0)
-
-# Ubah ke array NumPy untuk dimasukkan ke OCR
-final_np = np.array(img_binary)
+# 4. Binarization (Biar teks jadi hitam pekat & background putih bersih) - SANGAT DIREKOMENDASIKAN UNTUK OCR
+# Blur sedikit untuk hilangkan bintik/noise
+blur_np = cv2.GaussianBlur(gray_np, (5, 5), 0)
+# Adaptive thresholding
+binary_np = cv2.adaptiveThreshold(
+    blur_np, 255, 
+    cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+    cv2.THRESH_BINARY, 11, 2
+)
 
 # ==========================
 # Simpan hasil untuk dicek
 # ==========================
-img_sharp.save("1_hasil_upscale_sharp.jpg")
-img_contrast.save("2_hasil_gray_contrast.jpg")
-img_binary.save("3_hasil_binary.jpg")
 
-# Nanti tinggal ganti ini
-# out = self.reader(final_np)
+# Simpan gambar upscale (masih berwarna)
+cv2.imwrite("hasil_upscale_cv.jpg", img_resized)
+
+# Simpan hasil grayscale
+cv2.imwrite("hasil_gray_cv.jpg", gray_np)
+
+# Simpan hasil binarization (hitam putih tegas)
+cv2.imwrite("hasil_binary_cv.jpg", binary_np)
+
+# ==========================
+# Masukkan ke OCR
+# ==========================
+# Tinggal masukkan array numpy-nya. Kamu bisa coba masukkan `binary_np` atau `gray_np` 
+# (Biasanya binary_np hasilnya jauh lebih minim typo)
+
+# out = self.reader(binary_np) 
 # print(out)
 
 print("Selesai")
