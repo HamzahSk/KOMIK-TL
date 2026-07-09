@@ -8,13 +8,13 @@ class OCREngine:
     def __init__(self):
         # Inisialisasi PaddleOCR versi 3.7.0 (PP-OCRv6)
         self.reader = PaddleOCR(
-            lang='en',                       # Fokus ke deteksi bahasa Inggris
-            device='cpu',                    # Menggantikan use_gpu=False, wajib CPU untuk free runner
-            use_doc_orientation_classify=False, # Matikan untuk hemat resource
-            use_doc_unwarping=False,         # Matikan koreksi lengkungan agar lebih enteng
-            use_textline_orientation=True,   # Menggantikan use_angle_cls=True untuk deteksi orientasi teks
-            enable_mkldnn=True,              # Memaksimalkan akselerasi CPU
-            cpu_threads=2                    # Set thread CPU (GitHub Actions free biasanya pakai 2 core)
+            lang='en',                       
+            device='cpu',                    
+            use_doc_orientation_classify=False, 
+            use_doc_unwarping=False,         
+            use_textline_orientation=True,   
+            enable_mkldnn=True,              
+            cpu_threads=2                    
         )
 
     def detect_and_merge(self, img_path):
@@ -36,10 +36,13 @@ class OCREngine:
         enhanced_img = clahe.apply(gray_np)
 
         # 5. Denoising Ringan
-        clean_img = cv2.medianBlur(enhanced_img, 3)
+        clean_img_gray = cv2.medianBlur(enhanced_img, 3)
+
+        # 6. Convert back to BGR (3 channels) for PaddleOCR compatibility
+        clean_img_bgr = cv2.cvtColor(clean_img_gray, cv2.COLOR_GRAY2BGR)
 
         # Gunakan API predict() versi terbaru
-        out = self.reader.predict(clean_img)
+        out = self.reader.predict(clean_img_bgr)
         
         # Jika kosong, skip
         if not out: 
@@ -48,24 +51,19 @@ class OCREngine:
         raw_lines = []
 
         # Ekstraksi Data dari objek Result PaddleOCR v3.7
-        # Data hasil prediksi tersimpan dalam key 'res'
         try:
-            # Mengakses dictionary hasil prediksi
             res_data = out[0]['res']
-        except (TypeError, KeyError, IndexError):
-            # Fallback jika out[0] di-return sebagai object murni
+        except TypeError:
             res_data = getattr(out[0], 'res', {})
             if not res_data and hasattr(out[0], '__dict__'):
                 res_data = out[0].__dict__.get('res', {})
 
-        # Ambil array teks dan koordinat
         rec_texts = res_data.get('rec_texts', [])
         rec_polys = res_data.get('rec_polys', [])
         
         if len(rec_texts) == 0:
             return []
 
-        # Looping hasil ekstraksi
         for i in range(len(rec_texts)):
             text = rec_texts[i]
             bbox = rec_polys[i]
@@ -73,7 +71,6 @@ class OCREngine:
             if not bbox or not text: 
                 continue
             
-            # Kembalikan koordinat ke ukuran asli (karena tadi di-upscale 2x)
             xs = [p[0] / 2.0 for p in bbox]
             ys = [p[1] / 2.0 for p in bbox]
             
@@ -89,28 +86,21 @@ class OCREngine:
                     "box": [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))]
                 })
                 
-        # Logika penggabungan balon dialog tetap sama, tidak perlu diganti
         return self._merge_dialog_bubbles(raw_lines)
 
     def _merge_dialog_bubbles(self, lines):
-        if not lines: 
-            return []
-        
+        if not lines: return []
         lines.sort(key=lambda item: item['box'][1])
         merged, visited = [], set()
         
         for i in range(len(lines)):
-            if i in visited: 
-                continue
-            
+            if i in visited: continue
             base = lines[i]
             visited.add(i)
             group_boxes, combined_text = [base['box']], [base['text']]
             
             for j in range(i + 1, len(lines)):
-                if j in visited: 
-                    continue
-                
+                if j in visited: continue
                 next_box = lines[j]['box']
                 prev_box = group_boxes[-1] 
                 min_h = min(prev_box[3] - prev_box[1], next_box[3] - next_box[1])
@@ -123,10 +113,8 @@ class OCREngine:
                     group_boxes.append(next_box)
                     visited.add(j)
 
-            min_x = min([b[0] for b in group_boxes])
-            min_y = min([b[1] for b in group_boxes])
-            max_x = max([b[2] for b in group_boxes])
-            max_y = max([b[3] for b in group_boxes])
+            min_x, min_y = min([b[0] for b in group_boxes]), min([b[1] for b in group_boxes])
+            max_x, max_y = max([b[2] for b in group_boxes]), max([b[3] for b in group_boxes])
             
             gabungan_teks = " ".join(combined_text)
             
