@@ -2,6 +2,7 @@
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
     "https://vymanga.com/read/cant-think-straight/2851913",
+
 ]
 
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
