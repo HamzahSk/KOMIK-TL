@@ -15,7 +15,7 @@ class AiTranslator:
         self.fallback_url = 'https://llmproxy.org/api/chat.php'
         
         # Konfigurasi API Fallback 2 (TheTurboChat / Gemini)
-        self.fallback_url_2 = 'https://cors-proxydev.wisp.uno/proxy?url=https://theturbochat.com/api/chat/message'
+        self.fallback_url_2 = 'https://theturbochat.com/api/chat/message'
         
         self.MAX_CHARS = 1500
         self.SEPARATOR = '130495848'
@@ -76,7 +76,7 @@ class AiTranslator:
             f"Teks-teks ini bisa berupa dialog bubble, SFX, atau campuran dari beberapa panel. "
             f"Dialog antar bubble mungkin masih dalam satu percakapan yang sama—pastikan terjemahannya tetap nyambung "
             f"secara alur dan karakter. Cermati dan bedakan mana dialog dan mana SFX sebelum menerjemahkan. "
-            f"Hasil akhir harus berupa teks terjemahan yang dipisahkan oleh '{self.SEPARATOR}' tanpa tambahan "
+            f"Hasil akhir harus berupa teks terjemahan *BAHASA INDONESIA* yang dipisahkan oleh '{self.SEPARATOR}' tanpa tambahan "
             f"penjelasan, basa-basi, atau penomoran apa pun.\n\n"
             f"TEKS SUMBER:\n\n"
             + f"\n{self.SEPARATOR}\n".join(batch_texts)
@@ -176,44 +176,55 @@ class AiTranslator:
             user_message = self._format_batch_text(batch)
             translations = []
             
-            try:
-                # 1. Coba API Utama (Custom Deepseek Endpoint)
-                encoded_query = urllib.parse.quote(user_message)
-                req_url = f"{self.main_api_base}?q={encoded_query}"
-                
-                # Tambahkan ID jika sudah ada dari batch sebelumnya (di chapter yang sama)
-                if self.current_chat_id:
-                    req_url += f"&id={self.current_chat_id}"
+            main_success = False
+            for attempt in range(2): # Mencoba maksimal 2 kali
+                try:
+                    # 1. Coba API Utama (Custom Deepseek Endpoint)
+                    encoded_query = urllib.parse.quote(user_message)
+                    req_url = f"{self.main_api_base}?q={encoded_query}"
                     
-                response = requests.get(req_url, timeout=45)
-                response.raise_for_status()
-                data = response.json()
-                
-                if data.get('status') != 'success':
-                    raise ValueError(f"Status response API bukan success: {data}")
+                    # Tambahkan ID jika sudah ada dari batch sebelumnya (di chapter yang sama)
+                    if self.current_chat_id:
+                        req_url += f"&id={self.current_chat_id}"
+                        
+                    response = requests.get(req_url, timeout=45)
+                    response.raise_for_status()
+                    data = response.json()
                     
-                ai_response_data = data.get('ai_response', {})
-                if not ai_response_data.get('status'):
-                    raise ValueError(f"AI merespon dengan status false: {ai_response_data}")
+                    if data.get('status') != 'success':
+                        raise ValueError(f"Status response API bukan success: {data}")
+                        
+                    ai_response_data = data.get('ai_response', {})
+                    if not ai_response_data.get('status'):
+                        raise ValueError(f"AI merespon dengan status false: {ai_response_data}")
+                        
+                    result_data = ai_response_data.get('data', {})
+                    ai_response_text = result_data.get('message', '')
                     
-                result_data = ai_response_data.get('data', {})
-                ai_response_text = result_data.get('message', '')
-                
-                # Simpan chat_id untuk request batch berikutnya di chapter yang sama
-                new_chat_id = result_data.get('id')
-                if new_chat_id:
-                    self.current_chat_id = new_chat_id
-                
-                # Verifikasi hasil Utama
-                translations = self._verify_and_clean(ai_response_text, batch)
-                
-                if translations:
-                    print(f"=== RESPON UTAMA SUKSES (Chat ID: {self.current_chat_id}) ===")
-                else:
-                    raise ValueError("Format teks dari API Utama berantakan.")
-                
-            except Exception as e:
-                print(f"[Warning] API Utama Bermasalah ({e}). Beralih ke Fallback 1...")
+                    # Simpan chat_id untuk request batch berikutnya di chapter yang sama
+                    new_chat_id = result_data.get('id')
+                    if new_chat_id:
+                        self.current_chat_id = new_chat_id
+                    
+                    # Verifikasi hasil Utama
+                    translations = self._verify_and_clean(ai_response_text, batch)
+                    
+                    if translations:
+                        print(f"=== RESPON UTAMA SUKSES (Chat ID: {self.current_chat_id}) ===")
+                        main_success = True
+                        break # Jika sukses, keluar dari loop percobaan
+                    else:
+                        raise ValueError("Format teks dari API Utama berantakan.")
+                    
+                except Exception as e:
+                    print(f"[Warning] API Utama Bermasalah di percobaan {attempt + 1} ({e}).")
+                    if attempt == 0:
+                        print("Mencoba ulang API Utama sekali lagi dalam 2 detik...")
+                        time.sleep(2) # Jeda sebelum mencoba ulang
+            
+            # Jika setelah 2 kali coba masih gagal, jalankan Fallback
+            if not main_success:
+                print("[Warning] API Utama gagal setelah 2 kali percobaan. Beralih ke Fallback 1...")
                 
                 # 2. Fallback 1 (DeepSeek Proxy)
                 ai_response = self._fallback_translate(user_message)
@@ -236,8 +247,9 @@ class AiTranslator:
 
             all_translations.extend(translations)
             time.sleep(1.5)
-                
+            
         return all_translations
+
 
     def _clean_part(self, text):
         cleaned = text.strip()
