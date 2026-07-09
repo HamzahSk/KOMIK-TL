@@ -2,29 +2,17 @@
 import re
 import cv2
 import numpy as np
-from rapidocr import EngineType, LangDet, LangRec, ModelType, OCRVersion, RapidOCR
+from paddleocr import PaddleOCR
 
 class OCREngine:
     def __init__(self):
-        self.reader = RapidOCR(
-            params={
-                "Det.engine_type": EngineType.ONNXRUNTIME,
-                "Det.lang_type": LangDet.EN,               
-                "Det.model_type": ModelType.SMALL,         
-                "Det.ocr_version": OCRVersion.PPOCRV6,     
-                
-                # --- TAMBAHAN BARU ---
-                # Menambahkan parameter Cls untuk mendeteksi kemiringan/orientasi teks
-                "Cls.ocr_version": OCRVersion.PPOCRV5,
-                "Cls.engine_type": EngineType.ONNXRUNTIME,
-                "Cls.model_type": ModelType.MOBILE,  # Menggunakan versi mobile sesuai standar default terbaru
-                # ---------------------
-                
-                "Rec.engine_type": EngineType.ONNXRUNTIME, 
-                "Rec.lang_type": LangRec.EN,               
-                "Rec.model_type": ModelType.SMALL,         
-                "Rec.ocr_version": OCRVersion.PPOCRV6,     
-            }
+        # Inisialisasi PaddleOCR
+        # Karena berjalan di GitHub Actions (Free Tier), kita paksa gunakan CPU
+        self.reader = PaddleOCR(
+            use_angle_cls=True,  # Mengaktifkan deteksi kemiringan/orientasi teks (seperti parameter Cls sebelumnya)
+            lang='en',           # Fokus ke deteksi bahasa Inggris
+            use_gpu=False,       # Wajib False untuk GitHub Actions free runner
+            show_log=False       # Mematikan log bawaan agar log di GitHub Actions tidak terlalu berisik
         )
 
     def detect_and_merge(self, img_path):
@@ -46,39 +34,28 @@ class OCREngine:
         enhanced_img = clahe.apply(gray_np)
 
         # 5. Denoising Ringan (Gunakan Median Blur daripada Gaussian Blur)
-        # Median Blur jauh lebih pintar membuang noise/bintik (salt-and-pepper) 
-        # di komik hasil scan tanpa membuat tepi teks menjadi buram.
         clean_img = cv2.medianBlur(enhanced_img, 3)
 
-        # --- Adaptive Thresholding DIHAPUS ---
-        # Kita langsung berikan gambar Grayscale yang sudah kontras & bersih ke RapidOCR
-
-        # Masukkan hasil preprocessing ke RapidOCR
-        out = self.reader(clean_img, use_det=True, use_cls=True, use_rec=True)
+        # Masukkan hasil preprocessing ke PaddleOCR
+        # cls=True memastikan classifier sudut dijalankan
+        out = self.reader.ocr(clean_img, cls=True)
         
-        if not out: return []
-        
-        # ... (Kode ekstraksi kotak dan teks di bawahnya tetap sama seperti sebelumnya) ...
+        # PaddleOCR mengembalikan list kosong atau None jika tidak ada teks
+        if not out or not out[0]: 
+            return []
         
         raw_lines = []
-        boxes, texts = [], []
 
-        # Ekstraksi Data RapidOCR yang sudah disederhanakan
-        if hasattr(out, 'boxes') and hasattr(out, 'txts') and out.boxes is not None:
-            boxes, texts = out.boxes, out.txts
-        # Fallback jika output berbentuk tuple/list (versi lama)
-        elif isinstance(out, (tuple, list)):
-            iterable_result = out[0] if isinstance(out, tuple) else out
-            for item in iterable_result:
-                if isinstance(item, (list, tuple)) and len(item) >= 2:
-                    boxes.append(item[0])
-                    texts.append(item[1])
-
-        # Post-Processing
-        for bbox, text in zip(boxes, texts):
-            if bbox is None or len(bbox) < 4: continue
+        # Ekstraksi Data PaddleOCR
+        # Output format PaddleOCR: [ [ [[x1,y1], [x2,y2], [x3,y3], [x4,y4]], ('Teks', confidence_score) ], ... ]
+        for line in out[0]:
+            bbox, (text, score) = line
+            
+            if not bbox or not text: 
+                continue
             
             # Kembalikan koordinat ke ukuran asli (karena tadi di-upscale 2x)
+            # PaddleOCR memberikan 4 titik sudut, kita ambil x dan y nya
             xs = [p[0] / 2.0 for p in bbox]
             ys = [p[1] / 2.0 for p in bbox]
             

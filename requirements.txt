@@ -1,6 +1,5 @@
-rapidocr
-onnxruntime
-opencv-python
+paddleocr
+opencv-python-headless
 pillow
 numpy<2
 requests
