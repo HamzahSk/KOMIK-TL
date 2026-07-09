@@ -2,30 +2,12 @@
 import re
 import cv2
 import numpy as np
-from rapidocr import EngineType, LangDet, LangRec, ModelType, OCRVersion, RapidOCR
+from rapidocr import RapidOCR
 
 class OCREngine:
-    def __init__(self):
-        self.reader = RapidOCR(
-            params={
-                "Det.engine_type": EngineType.ONNXRUNTIME,
-                "Det.lang_type": LangDet.EN,               
-                "Det.model_type": ModelType.SMALL,         
-                "Det.ocr_version": OCRVersion.PPOCRV6,     
-                
-                # --- TAMBAHAN BARU ---
-                # Menambahkan parameter Cls untuk mendeteksi kemiringan/orientasi teks
-                "Cls.ocr_version": OCRVersion.PPOCRV5,
-                "Cls.engine_type": EngineType.ONNXRUNTIME,
-                "Cls.model_type": ModelType.MOBILE,  # Menggunakan versi mobile sesuai standar default terbaru
-                # ---------------------
-                
-                "Rec.engine_type": EngineType.ONNXRUNTIME, 
-                "Rec.lang_type": LangRec.EN,               
-                "Rec.model_type": ModelType.SMALL,         
-                "Rec.ocr_version": OCRVersion.PPOCRV6,     
-            }
-        )
+    def __init__(self, config_path="config.yaml"):
+        # Inisialisasi RapidOCR langsung menggunakan file config.yaml
+        self.reader = RapidOCR(config_path=config_path)
 
     def detect_and_merge(self, img_path):
         # 1. Buka gambar menggunakan OpenCV
@@ -46,19 +28,14 @@ class OCREngine:
         enhanced_img = clahe.apply(gray_np)
 
         # 5. Denoising Ringan (Gunakan Median Blur daripada Gaussian Blur)
-        # Median Blur jauh lebih pintar membuang noise/bintik (salt-and-pepper) 
-        # di komik hasil scan tanpa membuat tepi teks menjadi buram.
         clean_img = cv2.medianBlur(enhanced_img, 3)
 
-        # --- Adaptive Thresholding DIHAPUS ---
-        # Kita langsung berikan gambar Grayscale yang sudah kontras & bersih ke RapidOCR
-
         # Masukkan hasil preprocessing ke RapidOCR
+        # Karena kita sudah mendefinisikan use_det, use_cls, dan use_rec di config.yaml,
+        # kita tidak perlu memaksanya di pemanggilan ini, tapi kita tetap bisa memberikannya sebagai penegasan.
         out = self.reader(clean_img, use_det=True, use_cls=True, use_rec=True)
         
         if not out: return []
-        
-        # ... (Kode ekstraksi kotak dan teks di bawahnya tetap sama seperti sebelumnya) ...
         
         raw_lines = []
         boxes, texts = [], []
