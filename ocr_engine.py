@@ -7,15 +7,14 @@ from paddleocr import PaddleOCR
 class OCREngine:
     def __init__(self):
         # Inisialisasi PaddleOCR versi 3.7.0 (PP-OCRv6)
-        # [span_4](start_span)Berdasarkan dokumentasi terbaru, argumen di-update ke format baru[span_4](end_span).
         self.reader = PaddleOCR(
-            [span_5](start_span)lang='en',                       # Fokus ke deteksi bahasa Inggris[span_5](end_span)
-            [span_6](start_span)device='cpu',                    # Menggantikan use_gpu=False, wajib CPU untuk free runner[span_6](end_span)
-            [span_7](start_span)use_doc_orientation_classify=False, # Matikan untuk hemat resource[span_7](end_span)
-            [span_8](start_span)use_doc_unwarping=False,         # Matikan koreksi lengkungan agar lebih enteng[span_8](end_span)
-            [span_9](start_span)use_textline_orientation=True,   # Menggantikan use_angle_cls=True untuk deteksi orientasi teks[span_9](end_span)
-            [span_10](start_span)enable_mkldnn=True,              # Memaksimalkan akselerasi CPU[span_10](end_span)
-            [span_11](start_span)cpu_threads=2                    # Set thread CPU (GitHub Actions free biasanya pakai 2 core)[span_11](end_span)
+            lang='en',                       # Fokus ke deteksi bahasa Inggris
+            device='cpu',                    # Menggantikan use_gpu=False, wajib CPU untuk free runner
+            use_doc_orientation_classify=False, # Matikan untuk hemat resource
+            use_doc_unwarping=False,         # Matikan koreksi lengkungan agar lebih enteng
+            use_textline_orientation=True,   # Menggantikan use_angle_cls=True untuk deteksi orientasi teks
+            enable_mkldnn=True,              # Memaksimalkan akselerasi CPU
+            cpu_threads=2                    # Set thread CPU (GitHub Actions free biasanya pakai 2 core)
         )
 
     def detect_and_merge(self, img_path):
@@ -39,7 +38,7 @@ class OCREngine:
         # 5. Denoising Ringan
         clean_img = cv2.medianBlur(enhanced_img, 3)
 
-        # [span_12](start_span)Gunakan API predict() versi terbaru[span_12](end_span)
+        # Gunakan API predict() versi terbaru
         out = self.reader.predict(clean_img)
         
         # Jika kosong, skip
@@ -48,18 +47,18 @@ class OCREngine:
         
         raw_lines = []
 
-        # [span_13](start_span)Ekstraksi Data dari objek Result PaddleOCR v3.7[span_13](end_span)
-        # [span_14](start_span)Data hasil prediksi tersimpan dalam key 'res'[span_14](end_span)
+        # Ekstraksi Data dari objek Result PaddleOCR v3.7
+        # Data hasil prediksi tersimpan dalam key 'res'
         try:
             # Mengakses dictionary hasil prediksi
             res_data = out[0]['res']
-        except TypeError:
+        except (TypeError, KeyError, IndexError):
             # Fallback jika out[0] di-return sebagai object murni
             res_data = getattr(out[0], 'res', {})
             if not res_data and hasattr(out[0], '__dict__'):
                 res_data = out[0].__dict__.get('res', {})
 
-        # [span_15](start_span)Ambil array teks dan koordinat[span_15](end_span)
+        # Ambil array teks dan koordinat
         rec_texts = res_data.get('rec_texts', [])
         rec_polys = res_data.get('rec_polys', [])
         
@@ -94,18 +93,24 @@ class OCREngine:
         return self._merge_dialog_bubbles(raw_lines)
 
     def _merge_dialog_bubbles(self, lines):
-        if not lines: return []
+        if not lines: 
+            return []
+        
         lines.sort(key=lambda item: item['box'][1])
         merged, visited = [], set()
         
         for i in range(len(lines)):
-            if i in visited: continue
+            if i in visited: 
+                continue
+            
             base = lines[i]
             visited.add(i)
             group_boxes, combined_text = [base['box']], [base['text']]
             
             for j in range(i + 1, len(lines)):
-                if j in visited: continue
+                if j in visited: 
+                    continue
+                
                 next_box = lines[j]['box']
                 prev_box = group_boxes[-1] 
                 min_h = min(prev_box[3] - prev_box[1], next_box[3] - next_box[1])
@@ -118,8 +123,10 @@ class OCREngine:
                     group_boxes.append(next_box)
                     visited.add(j)
 
-            min_x, min_y = min([b[0] for b in group_boxes]), min([b[1] for b in group_boxes])
-            max_x, max_y = max([b[2] for b in group_boxes]), max([b[3] for b in group_boxes])
+            min_x = min([b[0] for b in group_boxes])
+            min_y = min([b[1] for b in group_boxes])
+            max_x = max([b[2] for b in group_boxes])
+            max_y = max([b[3] for b in group_boxes])
             
             gabungan_teks = " ".join(combined_text)
             
