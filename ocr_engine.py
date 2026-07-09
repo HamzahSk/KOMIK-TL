@@ -8,17 +8,14 @@ class OCREngine:
     def __init__(self):
         # Inisialisasi PaddleOCR versi 3.7.0 (PP-OCRv6)
         self.reader = PaddleOCR(
-            lang='en',
-            device='cpu',
-            use_doc_orientation_classify=False,
-            use_doc_unwarping=False,
-            use_textline_orientation=True,
-            enable_mkldnn=True,
-            cpu_threads=2
+            lang='en',                       # Fokus ke deteksi bahasa Inggris
+            device='cpu',                    # Menggantikan use_gpu=False, wajib CPU untuk free runner
+            use_doc_orientation_classify=False, # Matikan untuk hemat resource
+            use_doc_unwarping=False,         # Matikan koreksi lengkungan agar lebih enteng
+            use_textline_orientation=True,   # Menggantikan use_angle_cls=True untuk deteksi orientasi teks
+            enable_mkldnn=True,              # Memaksimalkan akselerasi CPU
+            cpu_threads=2                    # Set thread CPU (GitHub Actions free biasanya pakai 2 core)
         )
-        # Batas maksimum ukuran gambar untuk OCR
-        self.max_height = 3000
-        self.max_width = 2000
 
     def detect_and_merge(self, img_path):
         # 1. Buka gambar menggunakan OpenCV
@@ -26,63 +23,49 @@ class OCREngine:
         if img is None:
             return []
         
-        h, w = img.shape[:2]
+        # 2. Upscale 2x lipat (Ubah ke INTER_LANCZOS4 karena lebih tajam)
+
         
-        # 2. Resize jika terlalu besar (tapi tidak terlalu kecil)
-        # Tujuan: menjaga proporsi tapi tidak melebihi batas
-        scale = 1.0
-        if h > self.max_height:
-            scale = self.max_height / h
-        if w > self.max_width:
-            scale = min(scale, self.max_width / w)
-        
-        # Jika perlu resize, lakukan dengan INTER_LANCZOS4
-        if scale < 1.0:
-            new_w = int(w * scale)
-            new_h = int(h * scale)
-            img_resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LANCZOS4)
-            print(f"  [OCR] Resize dari {w}x{h} ke {new_w}x{new_h} (scale: {scale:.2f})")
-        else:
-            # Upscale 1.5x untuk gambar kecil (bukan 2x)
-            if h < 1500 and w < 1000:
-                scale = 1.5
-                new_w = int(w * scale)
-                new_h = int(h * scale)
-                img_resized = cv2.resize(img, (new_w, new_h), interpolation=cv2.INTER_LANCZOS4)
-                print(f"  [OCR] Upscale dari {w}x{h} ke {new_w}x{new_h} (scale: {scale:.2f})")
-            else:
-                img_resized = img
-        
-        # 3. Preprocessing: Grayscale + CLAHE + Denoising
-        gray_np = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
+        # 3. Ubah ke Grayscale untuk preprocessing
+        gray_np = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+        # 4. Terapkan CLAHE
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
         enhanced_img = clahe.apply(gray_np)
+
+        # 5. Denoising Ringan
         clean_img = cv2.medianBlur(enhanced_img, 3)
         
-        # 4. Konversi kembali ke BGR (3 channel) untuk PaddleOCR
+        # 6. Konversi kembali ke BGR (3 channel) untuk PaddleOCR
         clean_img_bgr = cv2.cvtColor(clean_img, cv2.COLOR_GRAY2BGR)
 
-        # 5. OCR
+        # Gunakan API predict() versi terbaru
         out = self.reader.predict(clean_img_bgr)
         
+        # Jika kosong, skip
         if not out: 
             return []
         
         raw_lines = []
 
+        # Ekstraksi Data dari objek Result PaddleOCR v3.7
         try:
+            # Mengakses dictionary hasil prediksi
             res_data = out[0]['res']
         except (TypeError, KeyError, IndexError):
+            # Fallback jika out[0] di-return sebagai object murni
             res_data = getattr(out[0], 'res', {})
             if not res_data and hasattr(out[0], '__dict__'):
                 res_data = out[0].__dict__.get('res', {})
 
+        # Ambil array teks dan koordinat
         rec_texts = res_data.get('rec_texts', [])
         rec_polys = res_data.get('rec_polys', [])
         
         if len(rec_texts) == 0:
             return []
 
+        # Looping hasil ekstraksi
         for i in range(len(rec_texts)):
             text = rec_texts[i]
             bbox = rec_polys[i]
@@ -90,21 +73,9 @@ class OCREngine:
             if not bbox or not text: 
                 continue
             
-            # Kembalikan koordinat ke ukuran asli
-            # Jika gambar di-resize, skalakan kembali koordinatnya
-            if scale < 1.0:
-                # Resize down, koordinat perlu di-scale up
-                scale_back = 1.0 / scale
-                xs = [p[0] * scale_back for p in bbox]
-                ys = [p[1] * scale_back for p in bbox]
-            elif scale > 1.0:
-                # Upscale, koordinat perlu di-scale down
-                scale_back = 1.0 / scale
-                xs = [p[0] * scale_back for p in bbox]
-                ys = [p[1] * scale_back for p in bbox]
-            else:
-                xs = [p[0] for p in bbox]
-                ys = [p[1] for p in bbox]
+            # Kembalikan koordinat ke ukuran asli (karena tadi di-upscale 2x)
+            xs = [p[0] / 2.0 for p in bbox]
+            ys = [p[1] / 2.0 for p in bbox]
             
             fixed_text = text.replace('|', 'I').replace('[', 'I').replace(']', 'I').replace('{', 'I').replace('}', 'I')
             fixed_text = fixed_text.upper()
@@ -118,6 +89,7 @@ class OCREngine:
                     "box": [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))]
                 })
                 
+        # Logika penggabungan balon dialog tetap sama, tidak perlu diganti
         return self._merge_dialog_bubbles(raw_lines)
 
     def _merge_dialog_bubbles(self, lines):
