@@ -1,6 +1,6 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
-urls = [
+URLCHAPTER = [
     "https://vymanga.com/read/turning/2110430",
     "https://vymanga.com/read/turning/2117620",
     "https://vymanga.com/read/turning/2135405",
