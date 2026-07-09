@@ -9,6 +9,7 @@ Global:
     min_side_len: 30
     return_word_box: false
     return_single_char_box: false
+    model_root_dir: null
     log_level: "info"
 
 EngineConfig:
