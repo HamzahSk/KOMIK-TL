@@ -3,6 +3,8 @@ import os
 import requests
 import concurrent.futures
 import numpy as np
+import cv2 # Tambahkan ini di deretan import atas
+
 from PIL import Image, ImageDraw, ImageFont
 
 class ImageProcessor:
@@ -219,3 +221,72 @@ def merge_short_images(raw_paths, target_height=2200, max_workers=6):
         merged_paths.append(results[i])
         
     return merged_paths
+
+def smart_slice_image(image_path, target_height=2000, out_dir="output"):
+    """
+    Memotong gambar memanjang secara cerdas tanpa memotong teks/gambar penting.
+    Mencari celah (ruang kosong) di antara panel komik.
+    """
+    # Baca gambar pakai OpenCV
+    img = cv2.imread(image_path)
+    if img is None:
+        print(f"[Error] Tidak bisa membaca gambar {image_path}")
+        return [image_path]
+
+    height, width = img.shape[:2]
+    
+    # Kalau gambar masih pendek dari target, tidak usah dipotong
+    if height <= target_height:
+        return [image_path]
+
+    # Ubah ke grayscale untuk mempermudah deteksi baris kosong
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    
+    # Hitung standar deviasi (variansi warna) per baris piksel
+    # Kalau nilainya kecil banget (< 5.0), berarti baris itu warnanya solid (putih/hitam polos) -> AMAN dipotong
+    row_std = np.std(gray, axis=1)
+    safe_rows = row_std < 5.0 
+    
+    sliced_paths = []
+    y_start = 0
+    part = 1
+    
+    base_name = os.path.splitext(os.path.basename(image_path))[0]
+    os.makedirs(out_dir, exist_ok=True)
+
+    while y_start < height:
+        y_end = y_start + target_height
+        
+        if y_end >= height:
+            y_end = height # Potongan terakhir sampai ujung bawah
+        else:
+            # Cari baris aman terdekat dari titik potong (y_end) naik ke atas
+            # Kita mundur maksimal setengah dari target_height biar potongannya nggak kekecilan
+            search_limit = max(y_start + (target_height // 2), 0)
+            
+            found_safe_cut = False
+            for y_candidate in range(y_end, search_limit, -1):
+                if safe_rows[y_candidate]:
+                    # Ketemu baris kosong! Kita potong di sini
+                    y_end = y_candidate
+                    found_safe_cut = True
+                    break
+            
+            # Kalau komiknya terlalu padat dan nggak ada ruang kosong sama sekali
+            if not found_safe_cut:
+                print(f"[Warning] Gagal mencari ruang kosong untuk {base_name}. Potong paksa.")
+        
+        # Eksekusi potong gambar dari y_start sampai y_end
+        slice_img = img[y_start:y_end, :]
+        
+        # Simpan hasil potongan
+        slice_path = os.path.join(out_dir, f"{base_name}_part{part}.jpg")
+        cv2.imwrite(slice_path, slice_img)
+        sliced_paths.append(slice_path)
+        
+        # Geser titik awal untuk potongan berikutnya
+        y_start = y_end
+        part += 1
+        
+    return sliced_paths
+    

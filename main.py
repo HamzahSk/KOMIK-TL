@@ -10,7 +10,7 @@ from scraper import get_chapter_list, fetch_chapter_soup, get_page_list, get_cha
 
 # Modul untuk OCR dan Image processing aja, hapus translator
 from ocr_engine import OCREngine
-from image_utils import download_page, merge_short_images
+from image_utils import download_page, merge_short_images, smart_slice_image
 
 def main():
     mangas = [u for u in config.URLMANGA if u.strip()]
@@ -85,23 +85,37 @@ def main():
         ocr_results = []
 
         for idx, path in enumerate(merged_paths):
-            blocks = ocr.detect_and_merge(path)
+            # 1. Potong gambar menggunakan Smart Slicing
+            # (Gunakan out_dir yang sudah dideklarasikan di atasnya)
+            sliced_paths = smart_slice_image(path, target_height=2000, out_dir=out_dir)
             
-            # Membersihkan noise teks yang cuma 1 kata (opsional, sesuai kodemu sebelumnya)
-            if blocks and len(blocks) == 1:
-                if len(blocks[0]['text'].split()) <= 1:
-                    blocks = [] 
+            page_texts = []
             
-            # Kumpulin teks per halaman
-            page_texts = [b['text'] for b in blocks] if blocks else []
+            # 2. Lakukan OCR pada setiap potongan gambar
+            for slice_path in sliced_paths:
+                blocks = ocr.detect_and_merge(slice_path)
+                
+                # Membersihkan noise teks yang cuma 1 kata
+                if blocks and len(blocks) == 1:
+                    if len(blocks[0]['text'].split()) <= 1:
+                        blocks = [] 
+                
+                # Masukkan teks dari potongan ini ke wadah halaman utama
+                if blocks:
+                    page_texts.extend([b['text'] for b in blocks])
+                
+                # Hapus file potongan setelah di-OCR agar tidak nyampah
+                if os.path.exists(slice_path) and slice_path != path:
+                    os.remove(slice_path)
             
+            # 3. Simpan hasil akhir halaman ke list utama
             ocr_results.append({
                 "halaman": idx + 1,
                 "gambar_sumber": os.path.basename(path),
                 "teks": page_texts
             })
             
-            # Hapus file gambar setelah selesai di-OCR biar gak menuh-menuhin storage
+            # Hapus file gambar gabungan utama setelah semua potongannya selesai
             if os.path.exists(path):
                 os.remove(path)
 
