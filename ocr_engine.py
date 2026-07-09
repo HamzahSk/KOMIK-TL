@@ -15,6 +15,7 @@ class OCREngine:
             use_textline_orientation=True,   # Menggantikan use_angle_cls=True untuk deteksi orientasi teks
             enable_mkldnn=True,              # Memaksimalkan akselerasi CPU
             cpu_threads=2                    # Set thread CPU (GitHub Actions free biasanya pakai 2 core)
+            det_limit_side_len=10000
         )
 
     def detect_and_merge(self, img_path):
