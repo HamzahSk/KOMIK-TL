@@ -11,7 +11,9 @@ Global:
     return_single_char_box: false
     model_root_dir: null
     log_level: "info"
-
+    font_path: null
+    box_thresh: 1
+    
 EngineConfig:
     onnxruntime:
         intra_op_num_threads: -1
