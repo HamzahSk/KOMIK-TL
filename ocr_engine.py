@@ -39,7 +39,7 @@ class OCREngine:
         img_resized = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_LANCZOS4)
         
         # 3. Ubah ke Grayscale
-        gray_np = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        gray_np = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
 
         # 4. Terapkan CLAHE (Mempertegas kontras lokal, menjaga huruf pudar agar lebih tebal)
         clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8,8))
@@ -54,7 +54,7 @@ class OCREngine:
         # Kita langsung berikan gambar Grayscale yang sudah kontras & bersih ke RapidOCR
 
         # Masukkan hasil preprocessing ke RapidOCR
-        out = self.reader(gray_np, use_det=True, use_cls=True, use_rec=True)
+        out = self.reader(clean_img, use_det=True, use_cls=True, use_rec=True)
         
         if not out: return []
         
