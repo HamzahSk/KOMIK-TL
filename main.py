@@ -1,20 +1,24 @@
 # main.py
 import os
 import re
-import json
+import zipfile
+import time
 import concurrent.futures
 from PIL import Image
 
 import config
 from scraper import get_chapter_list, fetch_chapter_soup, get_page_list, get_chapter_name
+from translator import AiTranslator 
 
-# Modul untuk OCR dan Image processing aja, hapus translator
+# Import modul yang sudah dipisah
 from ocr_engine import OCREngine
-from image_utils import download_page, merge_short_images, smart_slice_image
+from image_utils import ImageProcessor, Typesetter, download_page, merge_short_images, smart_slice_image
 
 def main():
     mangas = [u for u in config.URLMANGA if u.strip()]
     chapters = [u for u in config.URLCHAPTER if u.strip()]
+    
+    font_path = getattr(config, 'FONT_PATH', 'arial.ttf')
     
     if not mangas and not chapters:
         print("[System] URL kosong di config.py. Tidak ada yang diproses.")
@@ -33,9 +37,12 @@ def main():
             all_targets.append(c_url)
 
     ocr = OCREngine()
+    translator = AiTranslator()
 
     for ch_url in all_targets:
         print(f"\n[Scraper] Mengambil data halaman untuk: {ch_url}")
+        
+        translator.reset_chapter_session() 
         
         soup = fetch_chapter_soup(ch_url)
         if not soup:
@@ -79,62 +86,128 @@ def main():
         merged_paths = merge_short_images(raw_paths, target_height=2200, max_workers=6)
 
         # ==========================================
+        # FASE 2.5: Smart Slicing (Baru)
+        # ==========================================
+        print("Merapikan potongan panel gambar (Smart Slicing)...")
+        final_paths = []
+        for m_path in merged_paths:
+            # Potong secara cerdas pakai fungsi baru
+            slices = smart_slice_image(m_path, target_height=2000, out_dir=out_dir)
+            final_paths.extend(slices)
+            
+            # Jika gambar beneran dipotong (hasilnya lebih dari 1 file), 
+            # hapus gambar gabungan aslinya biar storage nggak penuh
+            if len(slices) > 1 and os.path.exists(m_path):
+                os.remove(m_path)
+
+        # ==========================================
         # FASE 3: Ekstraksi Teks (OCR) dari Semua Halaman
         # ==========================================
-        print(f"Mengekstraksi teks (OCR) dari {len(merged_paths)} gambar gabungan...")
-        ocr_results = []
+        # PERHATIKAN: Ubah 'merged_paths' menjadi 'final_paths' di bawah ini
+        print(f"Mengekstraksi teks (OCR) dari {len(final_paths)} gambar...")
+        page_blocks_list = [] 
+        kumpulan_teks = []    
 
-        for idx, path in enumerate(merged_paths):
-            # 1. Potong gambar menggunakan Smart Slicing
-            # (Gunakan out_dir yang sudah dideklarasikan di atasnya)
-            sliced_paths = smart_slice_image(path, target_height=2000, out_dir=out_dir)
+        for path in final_paths: # <--- INI YANG DIUBAH
+            blocks = ocr.detect_and_merge(path)
             
-            page_texts = []
+            if blocks and len(blocks) == 1:
+                if len(blocks[0]['text'].split()) <= 1:
+                    blocks = [] 
+
+            page_blocks_list.append((path, blocks))
             
-            # 2. Lakukan OCR pada setiap potongan gambar
-            for slice_path in sliced_paths:
-                blocks = ocr.detect_and_merge(slice_path)
-                
-                # Membersihkan noise teks yang cuma 1 kata
-                if blocks and len(blocks) == 1:
-                    if len(blocks[0]['text'].split()) <= 1:
-                        blocks = [] 
-                
-                # Masukkan teks dari potongan ini ke wadah halaman utama
-                if blocks:
-                    page_texts.extend([b['text'] for b in blocks])
-                
-                # Hapus file potongan setelah di-OCR agar tidak nyampah
-                if os.path.exists(slice_path) and slice_path != path:
-                    os.remove(slice_path)
-            
-            # 3. Simpan hasil akhir halaman ke list utama
-            ocr_results.append({
-                "halaman": idx + 1,
-                "gambar_sumber": os.path.basename(path),
-                "teks": page_texts
-            })
-            
-            # Hapus file gambar gabungan utama setelah semua potongannya selesai
-            if os.path.exists(path):
-                os.remove(path)
+            for b in blocks:
+                kumpulan_teks.append(b['text'])
 
         # ==========================================
-        # FASE 4: Simpan Hasil ke JSON
+        # FASE 4: Batch Translation 
         # ==========================================
-        json_filename = f"{folder_name}_OCR.json"
-        json_path = os.path.join("output", json_filename)
+        hasil_terjemahan = []
+        if kumpulan_teks:
+            print(f"Menerjemahkan {len(kumpulan_teks)} blok teks...")
+            
+            current_batch = []
+            current_len = 0
+            
+            for teks in kumpulan_teks:
+                panjang_teks = len(teks)
+                
+                if (current_len + panjang_teks > 1000) or (len(current_batch) >= 25):
+                    if current_batch: 
+                        hasil_terjemahan.extend(translator.translate_batch(current_batch))
+                        time.sleep(4)
+                    current_batch = []
+                    current_len = 0
+                
+                current_batch.append(teks)
+                current_len += panjang_teks
+                
+            if current_batch:
+                hasil_terjemahan.extend(translator.translate_batch(current_batch))
+                
+            print(f"Selesai menerjemahkan total {len(hasil_terjemahan)} blok teks.")
+        else:
+            print("Tidak ada teks yang perlu diterjemahkan di chapter ini.")
+
+        # ==========================================
+        # FASE 5: Typesetting & Distribusi Kembali
+        # ==========================================
+        print("Merender teks ke gambar dan menyimpan hasil akhir...")
+        text_index = 0
         
-        print(f"\nMenyimpan hasil ekstraksi teks ke: {json_path}...")
-        with open(json_path, 'w', encoding='utf-8') as json_file:
-            json.dump(ocr_results, json_file, ensure_ascii=False, indent=4)
+        for idx, (path, blocks) in enumerate(page_blocks_list):
+            final_path = os.path.join(out_dir, f"terjemahan_{str(idx+1).zfill(3)}.webp")
             
+            if not blocks:
+                try:
+                    img = Image.open(path).convert("RGB")
+                    img.save(final_path, format="WEBP", quality=80)
+                except Exception as e:
+                    print(f"Gagal menyimpan halaman {idx+1}: {e}")
+                finally:
+                    if os.path.exists(path): os.remove(path)
+                continue
+                
+            try:
+                img = Image.open(path).convert("RGB")
+                
+                for b in blocks:
+                    if text_index < len(hasil_terjemahan):
+                        b['translated_text'] = hasil_terjemahan[text_index]
+                    else:
+                        b['translated_text'] = b['text'] 
+                        
+                    b['colors'] = ImageProcessor.detect_colors(img, b['box'])
+                    text_index += 1
+                    
+                final_img = Typesetter.apply_text(img, blocks, font_path)
+                final_img.save(final_path, format="WEBP", quality=80)
+                
+            except Exception as e:
+                print(f"Gagal memproses typesetting halaman {idx+1}: {e}")
+            finally:
+                if os.path.exists(path): os.remove(path)
+                    
+        # ==========================================
+        # FASE 6: Pengarsipan CBZ
+        # ==========================================
+        cbz_path = os.path.join("output", f"{folder_name}.cbz")
+        print(f"\nMengarsipkan ke: {cbz_path}...")
+        
+        with zipfile.ZipFile(cbz_path, 'w', zipfile.ZIP_DEFLATED) as cbz_file:
+            for file_name in sorted(os.listdir(out_dir)): 
+                file_path = os.path.join(out_dir, file_name)
+                if os.path.isfile(file_path):
+                    cbz_file.write(file_path, arcname=file_name)
+                    os.remove(file_path)
+                    
         try:
-            os.rmdir(out_dir) # Hapus folder temporer kalau udah kosong
+            os.rmdir(out_dir)
         except OSError:
-            pass
+            print(f"[Warning] Tidak dapat menghapus folder sementara: {out_dir}")
             
-        print(f"Sukses! Hasil OCR tersimpan di output/{json_filename}")
+        print(f"Sukses mengarsipkan {folder_name}.cbz!")
 
 if __name__ == "__main__":
     main()
