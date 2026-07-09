@@ -93,20 +93,16 @@ def main():
         kumpulan_teks = []    
 
         for path in merged_paths:
-            try:
-                blocks = ocr.detect_and_merge(path)
-                
-                if blocks and len(blocks) == 1:
-                    if len(blocks[0]['text'].split()) <= 1:
-                        blocks = [] 
+            blocks = ocr.detect_and_merge(path)
+            
+            if blocks and len(blocks) == 1:
+                if len(blocks[0]['text'].split()) <= 1:
+                    blocks = [] 
 
-                page_blocks_list.append((path, blocks))
-                
-                for b in blocks:
-                    kumpulan_teks.append(b['text'])
-            except Exception as e:
-                print(f"[Error] OCR gagal untuk {path}: {e}")
-                page_blocks_list.append((path, []))
+            page_blocks_list.append((path, blocks))
+            
+            for b in blocks:
+                kumpulan_teks.append(b['text'])
 
         # ==========================================
         # FASE 4: Batch Translation 
@@ -154,8 +150,7 @@ def main():
                 except Exception as e:
                     print(f"Gagal menyimpan halaman {idx+1}: {e}")
                 finally:
-                    if os.path.exists(path): 
-                        os.remove(path)
+                    if os.path.exists(path): os.remove(path)
                 continue
                 
             try:
@@ -176,8 +171,7 @@ def main():
             except Exception as e:
                 print(f"Gagal memproses typesetting halaman {idx+1}: {e}")
             finally:
-                if os.path.exists(path): 
-                    os.remove(path)
+                if os.path.exists(path): os.remove(path)
                     
         # ==========================================
         # FASE 6: Pengarsipan CBZ
