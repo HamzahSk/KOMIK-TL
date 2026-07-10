@@ -12,7 +12,7 @@ URLCHAPTER = [
     "https://vymanga.com/read/bad-friend-euneun/3179367",
     "https://vymanga.com/read/bad-friend-euneun/3202635",
     "https://vymanga.com/read/bad-friend-euneun/3226350",
-    "https://vymanga.com/read/bad-friend-euneun/3226351",
+    "https://vymanga.com/read/bad-friend-euneun/3226351"
 ]
 
 
