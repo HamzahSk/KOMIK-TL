@@ -1,8 +1,13 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-    "https://vymanga.com/read/bad-friend-euneun/2990659",
-    "https://vymanga.com/read/bad-friend-euneun/2999918"
+    "https://vymanga.com/read/bad-friend-euneun/3000362",  # Chapter 24
+    "https://vymanga.com/read/bad-friend-euneun/3002999",  # Chapter 25
+    "https://vymanga.com/read/bad-friend-euneun/3011531",  # Chapter 26
+    "https://vymanga.com/read/bad-friend-euneun/3014861",  # Chapter 27
+    "https://vymanga.com/read/bad-friend-euneun/3049006",  # Chapter 28
+    "https://vymanga.com/read/bad-friend-euneun/3054828",  # Chapter 29
+    "https://vymanga.com/read/bad-friend-euneun/3062395",  # Chapter 30
 ]
 
 
