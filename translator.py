@@ -8,7 +8,7 @@ import urllib.parse
 class AiTranslator:
     def __init__(self):
         # Konfigurasi API Utama (Deepseek Custom Endpoint)
-        self.main_api_base = 'http://rocckykomik.freesrv.com/chat/deepseek'
+        self.main_api_base = 'http://78.154.103.34:13267/chat/deepseek'
         self.current_chat_id = None # Menyimpan ID sesi untuk 1 chapter
         
         # Konfigurasi API Fallback 1 (DeepSeek Proxy)

@@ -15,7 +15,7 @@ URLCHAPTER = [
   "https://vymanga.com/read/eighteens-bed/2619495",
   "https://vymanga.com/read/eighteens-bed/2619500",
   "https://vymanga.com/read/eighteens-bed/2620790",
-  "https://vymanga.com/read/eighteens-bed/2628562"
+  "https://vymanga.com/read/eighteens-bed/2628562" 
 ]
 
 
