@@ -1,18 +1,21 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-    "https://vymanga.com/read/bad-friend-euneun/3083948",
-    "https://vymanga.com/read/bad-friend-euneun/3096091",
-    "https://vymanga.com/read/bad-friend-euneun/3116789",
-    "https://vymanga.com/read/bad-friend-euneun/3128218",
-    "https://vymanga.com/read/bad-friend-euneun/3157262",
-    "https://vymanga.com/read/bad-friend-euneun/3169509",
-    "https://vymanga.com/read/bad-friend-euneun/3173271",
-    "https://vymanga.com/read/bad-friend-euneun/3176100",
-    "https://vymanga.com/read/bad-friend-euneun/3179367",
-    "https://vymanga.com/read/bad-friend-euneun/3202635",
-    "https://vymanga.com/read/bad-friend-euneun/3226350",
-    "https://vymanga.com/read/bad-friend-euneun/3226351"
+  "https://vymanga.com/read/eighteens-bed/2571702",
+  "https://vymanga.com/read/eighteens-bed/2595904",
+  "https://vymanga.com/read/eighteens-bed/2605564",
+  "https://vymanga.com/read/eighteens-bed/2608149",
+  "https://vymanga.com/read/eighteens-bed/2609109",
+  "https://vymanga.com/read/eighteens-bed/3149113",
+  "https://vymanga.com/read/eighteens-bed/3186975",
+  "https://vymanga.com/read/eighteens-bed/3186976",
+  "https://vymanga.com/read/eighteens-bed/2610340",
+  "https://vymanga.com/read/eighteens-bed/2611138",
+  "https://vymanga.com/read/eighteens-bed/2614655",
+  "https://vymanga.com/read/eighteens-bed/2619495",
+  "https://vymanga.com/read/eighteens-bed/2619500",
+  "https://vymanga.com/read/eighteens-bed/2620790",
+  "https://vymanga.com/read/eighteens-bed/2628562"
 ]
 
 
