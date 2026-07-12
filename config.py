@@ -1,23 +1,12 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-    "https://vymanga.com/read/emergency-youth-record-book/2769391",  # Chapter 11
-    "https://vymanga.com/read/emergency-youth-record-book/2770444",  # Chapter 12
-    "https://vymanga.com/read/emergency-youth-record-book/2771410",  # Chapter 13
-    "https://vymanga.com/read/emergency-youth-record-book/2774396",  # Chapter 14
-    "https://vymanga.com/read/emergency-youth-record-book/2777000",  # Chapter 15
-    "https://vymanga.com/read/emergency-youth-record-book/2779946",  # Chapter 16
-    "https://vymanga.com/read/emergency-youth-record-book/2783137",  # Chapter 17
-    "https://vymanga.com/read/emergency-youth-record-book/2789265",  # Chapter 18
-    "https://vymanga.com/read/emergency-youth-record-book/2796682",  # Chapter 19
-    "https://vymanga.com/read/emergency-youth-record-book/2806985",  # Chapter 20
-    "https://vymanga.com/read/emergency-youth-record-book/2817792",  # Chapter 21
-    "https://vymanga.com/read/emergency-youth-record-book/2820269",  # Chapter 22
-    "https://vymanga.com/read/emergency-youth-record-book/2830882",  # Chapter 23
-    "https://vymanga.com/read/emergency-youth-record-book/2837547",  # Chapter 24
-    "https://vymanga.com/read/emergency-youth-record-book/2843826",  # Chapter 25
+    "https://vymanga.com/read/checkmate-r/2247194",
+    "https://vymanga.com/read/checkmate-r/2247195",
+    "https://vymanga.com/read/checkmate-r/2247197",
+    "https://vymanga.com/read/checkmate-r/2247199",
+    "https://vymanga.com/read/checkmate-r/2247200",
 ]
-
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking
 
