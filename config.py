@@ -1,17 +1,16 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-    "https://vymanga.com/read/emergency-youth-record-book/2760893",
-    "https://vymanga.com/read/emergency-youth-record-book/2760894",
-    "https://vymanga.com/read/emergency-youth-record-book/2761726",
-    "https://vymanga.com/read/emergency-youth-record-book/2762330",
-    "https://vymanga.com/read/emergency-youth-record-book/2763257",
-    "https://vymanga.com/read/emergency-youth-record-book/2764115",
-    "https://vymanga.com/read/emergency-youth-record-book/2765093",
-    "https://vymanga.com/read/emergency-youth-record-book/2766516",
-    "https://vymanga.com/read/emergency-youth-record-book/2766890",
-    "https://vymanga.com/read/emergency-youth-record-book/2767718",
-    "https://vymanga.com/read/emergency-youth-record-book/2769391",
+    "https://vymanga.com/read/non-zero-sum/2088875",  # Chapter 1
+    "https://vymanga.com/read/non-zero-sum/2089059",  # Chapter 2
+    "https://vymanga.com/read/non-zero-sum/2090642",  # Chapter 3
+    "https://vymanga.com/read/non-zero-sum/2091491",  # Chapter 4
+    "https://vymanga.com/read/non-zero-sum/2093090",  # Chapter 5
+    "https://vymanga.com/read/non-zero-sum/2098282",  # Chapter 6
+    "https://vymanga.com/read/non-zero-sum/2099929",  # Chapter 7
+    "https://vymanga.com/read/non-zero-sum/2100841",  # Chapter 8
+    "https://vymanga.com/read/non-zero-sum/2104030",  # Chapter 9
+    "https://vymanga.com/read/non-zero-sum/2112343",  # Chapter 10
 ]
 
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
