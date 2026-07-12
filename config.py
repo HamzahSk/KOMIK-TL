@@ -1,23 +1,18 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-  "https://vymanga.com/read/eighteens-bed/2571702",
-  "https://vymanga.com/read/eighteens-bed/2595904",
-  "https://vymanga.com/read/eighteens-bed/2605564",
-  "https://vymanga.com/read/eighteens-bed/2608149",
-  "https://vymanga.com/read/eighteens-bed/2609109",
-  "https://vymanga.com/read/eighteens-bed/3149113",
-  "https://vymanga.com/read/eighteens-bed/3186975",
-  "https://vymanga.com/read/eighteens-bed/3186976",
-  "https://vymanga.com/read/eighteens-bed/2610340",
-  "https://vymanga.com/read/eighteens-bed/2611138",
-  "https://vymanga.com/read/eighteens-bed/2614655",
-  "https://vymanga.com/read/eighteens-bed/2619495",
-  "https://vymanga.com/read/eighteens-bed/2619500",
-  "https://vymanga.com/read/eighteens-bed/2620790",
-  "https://vymanga.com/read/eighteens-bed/2628562" 
+    "https://vymanga.com/read/lookalike/2046424",  # Chapter 0
+    "https://vymanga.com/read/lookalike/1924190",  # Chapter 1
+    "https://vymanga.com/read/lookalike/1932164",  # Chapter 2
+    "https://vymanga.com/read/lookalike/1932424",  # Chapter 3
+    "https://vymanga.com/read/lookalike/1933716",  # Chapter 4
+    "https://vymanga.com/read/lookalike/1933765",  # Chapter 5
+    "https://vymanga.com/read/lookalike/1934388",  # Chapter 6
+    "https://vymanga.com/read/lookalike/1939935",  # Chapter 7
+    "https://vymanga.com/read/lookalike/1945841",  # Chapter 8
+    "https://vymanga.com/read/lookalike/1953249",  # Chapter 9
+    "https://vymanga.com/read/lookalike/1958726",  # Chapter 10
 ]
-
 
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking
