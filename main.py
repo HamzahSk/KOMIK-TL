@@ -49,12 +49,20 @@ def main():
             print("[Error] Gagal memuat halaman web. Melewati chapter ini...")
             continue
             
-        raw_name = get_chapter_name(soup)
-        folder_name = re.sub(r'[^a-zA-Z0-9_\-\s]', '_', raw_name).strip()[:100]
-        out_dir = os.path.join("output", folder_name)
+        # Mengambil data dict { "title": "...", "chapter_name": "..." }
+        ch_info = get_chapter_name(soup)
+        
+        # Sanitasi nama agar aman untuk folder dan file sistem
+        manga_title = re.sub(r'[^a-zA-Z0-9_\-\s]', '_', ch_info.get('title', 'Unknown_Manga')).strip()[:100]
+        chapter_name = re.sub(r'[^a-zA-Z0-9_\-\s]', '_', ch_info.get('chapter_name', 'Unknown_Chapter')).strip()[:100]
+        
+        # Path Folder: output/[Nama Manga]/[Nama Chapter Sementara]
+        manga_dir = os.path.join("output", manga_title)
+        out_dir = os.path.join(manga_dir, chapter_name)
         os.makedirs(out_dir, exist_ok=True)
         
-        print(f"\n{'='*40}\nMemproses Chapter: {folder_name}\n{'='*40}")
+        print(f"\n{'='*40}\nManga: {manga_title}")
+        print(f"Memproses Chapter: {chapter_name}\n{'='*40}")
         
         pages = get_page_list(soup)
         if not pages:
@@ -91,24 +99,20 @@ def main():
         print("Merapikan potongan panel gambar (Smart Slicing)...")
         final_paths = []
         for m_path in merged_paths:
-            # Potong secara cerdas pakai fungsi baru
             slices = smart_slice_image(m_path, target_height=2000, out_dir=out_dir)
             final_paths.extend(slices)
             
-            # Jika gambar beneran dipotong (hasilnya lebih dari 1 file), 
-            # hapus gambar gabungan aslinya biar storage nggak penuh
             if len(slices) > 1 and os.path.exists(m_path):
                 os.remove(m_path)
 
         # ==========================================
         # FASE 3: Ekstraksi Teks (OCR) dari Semua Halaman
         # ==========================================
-        # PERHATIKAN: Ubah 'merged_paths' menjadi 'final_paths' di bawah ini
         print(f"Mengekstraksi teks (OCR) dari {len(final_paths)} gambar...")
         page_blocks_list = [] 
         kumpulan_teks = []    
 
-        for path in final_paths: # <--- INI YANG DIUBAH
+        for path in final_paths: 
             blocks = ocr.detect_and_merge(path)
             
             if blocks and len(blocks) == 1:
@@ -192,7 +196,8 @@ def main():
         # ==========================================
         # FASE 6: Pengarsipan CBZ
         # ==========================================
-        cbz_path = os.path.join("output", f"{folder_name}.cbz")
+        # File CBZ disimpan langsung di dalam folder manga: output/[Nama Manga]/[Nama Chapter].cbz
+        cbz_path = os.path.join(manga_dir, f"{chapter_name}.cbz")
         print(f"\nMengarsipkan ke: {cbz_path}...")
         
         with zipfile.ZipFile(cbz_path, 'w', zipfile.ZIP_DEFLATED) as cbz_file:
@@ -207,7 +212,7 @@ def main():
         except OSError:
             print(f"[Warning] Tidak dapat menghapus folder sementara: {out_dir}")
             
-        print(f"Sukses mengarsipkan {folder_name}.cbz!")
+        print(f"Sukses mengarsipkan {chapter_name}.cbz ke folder {manga_title}!")
 
 if __name__ == "__main__":
     main()

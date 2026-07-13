@@ -144,61 +144,128 @@ def get_page_list(soup, chapter_url=""):
         print(f"[Error] Gagal memproses halaman chapter: {e}")
         return []
 
-
 def get_chapter_name(soup, chapter_url=""):
-    """Mengambil nama chapter dari DOM (Mendukung VyManga & Bbato)"""
+    """
+    Mengambil informasi chapter dari DOM.
+    Return:
+    {
+        "title": "...",
+        "chapter_name": "..."
+    }
+    """
     if not soup:
-        return "Unknown Chapter"
-        
+        return {
+            "title": "Unknown Title",
+            "chapter_name": "Unknown Chapter"
+        }
+
     try:
         provider = detect_provider(chapter_url) if chapter_url else None
-        
-        # --- LOGIKA UNTUK BBATO ---
+
+        # ==========================
+        # BBATO
+        # ==========================
         if provider == "bbato":
-            # Cari semua script yang bertipe application/ld+json
-            scripts = soup.find_all('script', type='application/ld+json')
+            scripts = soup.find_all("script", type="application/ld+json")
             for script in scripts:
-                if script.string:
-                    try:
-                        # Parse string JSON di dalam tag script
-                        data = json.loads(script.string)
-                        
-                        # Pastikan ini adalah struktur BreadcrumbList
-                        if data.get("@type") == "BreadcrumbList":
-                            items = data.get("itemListElement", [])
-                            if items:
-                                # Chapter name biasanya ada di urutan terakhir array itemListElement
-                                return items[-1].get("name", "Unknown Chapter")
-                    except json.JSONDecodeError:
-                        # Lanjutkan pencarian jika format JSON tidak valid
-                        continue
+                if not script.string:
+                    continue
 
-        # --- LOGIKA UNTUK VYMANGA ---
+                try:
+                    data = json.loads(script.string)
+
+                    if data.get("@type") == "BreadcrumbList":
+                        items = data.get("itemListElement", [])
+
+                        if len(items) >= 2:
+                            return {
+                                "title": items[-2].get("name", "Unknown Title"),
+                                "chapter_name": items[-1].get("name", "Unknown Chapter")
+                            }
+                        elif len(items) == 1:
+                            return {
+                                "title": "Unknown Title",
+                                "chapter_name": items[-1].get("name", "Unknown Chapter")
+                            }
+
+                except json.JSONDecodeError:
+                    continue
+
+        # ==========================
+        # VYMANGA
+        # ==========================
         elif provider == "vymanga":
-            info_div = soup.find('div', id='chapter-info')
+            info_div = soup.find("div", id="chapter-info")
             if info_div:
-                return info_div.text.strip()
-                
-        # --- FALLBACK JIKA PROVIDER TIDAK DITEMUKAN ---
-        else:
-            # Coba logika VyManga terlebih dahulu
-            info_div = soup.find('div', id='chapter-info')
-            if info_div:
-                return info_div.text.strip()
-                
-            # Coba logika Bbato
-            scripts = soup.find_all('script', type='application/ld+json')
-            for script in scripts:
-                if script.string:
-                    try:
-                        data = json.loads(script.string)
-                        if data.get("@type") == "BreadcrumbList" and data.get("itemListElement"):
-                            return data["itemListElement"][-1].get("name", "Unknown Chapter")
-                    except json.JSONDecodeError:
-                        continue
+                text = info_div.get_text(strip=True)
 
-        return "Unknown Chapter"
+                if ":" in text:
+                    title, chapter_name = text.split(":", 1)
+                    return {
+                        "title": title.strip(),
+                        "chapter_name": chapter_name.strip()
+                    }
+
+                return {
+                    "title": text.strip(),
+                    "chapter_name": "Unknown Chapter"
+                }
+
+        # ==========================
+        # FALLBACK
+        # ==========================
+        else:
+            # Coba format VyManga
+            info_div = soup.find("div", id="chapter-info")
+            if info_div:
+                text = info_div.get_text(strip=True)
+
+                if ":" in text:
+                    title, chapter_name = text.split(":", 1)
+                    return {
+                        "title": title.strip(),
+                        "chapter_name": chapter_name.strip()
+                    }
+
+                return {
+                    "title": text.strip(),
+                    "chapter_name": "Unknown Chapter"
+                }
+
+            # Coba format Bbato
+            scripts = soup.find_all("script", type="application/ld+json")
+            for script in scripts:
+                if not script.string:
+                    continue
+
+                try:
+                    data = json.loads(script.string)
+
+                    if data.get("@type") == "BreadcrumbList":
+                        items = data.get("itemListElement", [])
+
+                        if len(items) >= 2:
+                            return {
+                                "title": items[-2].get("name", "Unknown Title"),
+                                "chapter_name": items[-1].get("name", "Unknown Chapter")
+                            }
+                        elif len(items) == 1:
+                            return {
+                                "title": "Unknown Title",
+                                "chapter_name": items[-1].get("name", "Unknown Chapter")
+                            }
+
+                except json.JSONDecodeError:
+                    continue
+
+        return {
+            "title": "Unknown Title",
+            "chapter_name": "Unknown Chapter"
+        }
 
     except Exception as e:
         print(f"[Error] Gagal memproses nama chapter: {e}")
-        return "Unknown Chapter"
+        return {
+            "title": "Unknown Title",
+            "chapter_name": "Unknown Chapter"
+        }
