@@ -1,20 +1,21 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-    "https://vymanga.com/read/emergency-youth-record-book/2857068",
-    "https://vymanga.com/read/emergency-youth-record-book/2866085",
-    "https://vymanga.com/read/emergency-youth-record-book/2875357",
-    "https://vymanga.com/read/emergency-youth-record-book/2884243",
-    "https://vymanga.com/read/emergency-youth-record-book/2887531",
-    "https://vymanga.com/read/emergency-youth-record-book/2893815",
-    "https://vymanga.com/read/emergency-youth-record-book/2899209",
-    "https://vymanga.com/read/emergency-youth-record-book/2912781",
-    "https://vymanga.com/read/emergency-youth-record-book/2924610",
-    "https://vymanga.com/read/emergency-youth-record-book/2931143",
-    "https://vymanga.com/read/emergency-youth-record-book/2947083",
-    "https://vymanga.com/read/emergency-youth-record-book/2951063",
-    "https://vymanga.com/read/emergency-youth-record-book/2953901",
     "https://vymanga.com/read/emergency-youth-record-book/2959988",
+    "https://vymanga.com/read/emergency-youth-record-book/2977022",
+    "https://vymanga.com/read/emergency-youth-record-book/3022157",
+    "https://vymanga.com/read/emergency-youth-record-book/3027534",  # Chapter 42.1
+    "https://vymanga.com/read/emergency-youth-record-book/3025425",
+    "https://vymanga.com/read/emergency-youth-record-book/3034205",  # Chapter 43.1
+    "https://vymanga.com/read/emergency-youth-record-book/3034206",
+    "https://vymanga.com/read/emergency-youth-record-book/3042422",
+    "https://vymanga.com/read/emergency-youth-record-book/3051985",
+    "https://vymanga.com/read/emergency-youth-record-book/3064126",
+    "https://vymanga.com/read/emergency-youth-record-book/3084952",
+    "https://vymanga.com/read/emergency-youth-record-book/3096635",
+    "https://vymanga.com/read/emergency-youth-record-book/3112770",
+    "https://vymanga.com/read/emergency-youth-record-book/3125143",
+    "https://vymanga.com/read/emergency-youth-record-book/3125144",
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking
