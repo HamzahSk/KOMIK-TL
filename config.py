@@ -1,23 +1,20 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-    "https://vymanga.com/read/emergency-youth-record-book/2769391",  # Chapter 11
-    "https://vymanga.com/read/emergency-youth-record-book/2770444",  # Chapter 12
-    "https://vymanga.com/read/emergency-youth-record-book/2771410",  # Chapter 13
-    "https://vymanga.com/read/emergency-youth-record-book/2774396",  # Chapter 14
-    "https://vymanga.com/read/emergency-youth-record-book/2777000",  # Chapter 15
-    "https://vymanga.com/read/emergency-youth-record-book/2779946",  # Chapter 16
-    "https://vymanga.com/read/emergency-youth-record-book/2783137",  # Chapter 17
-    "https://vymanga.com/read/emergency-youth-record-book/2789265",  # Chapter 18
-    "https://vymanga.com/read/emergency-youth-record-book/2796682",  # Chapter 19
-    "https://vymanga.com/read/emergency-youth-record-book/2806985",  # Chapter 20
-    "https://vymanga.com/read/emergency-youth-record-book/2817792",  # Chapter 21
-    "https://vymanga.com/read/emergency-youth-record-book/2820269",  # Chapter 22
-    "https://vymanga.com/read/emergency-youth-record-book/2830882",  # Chapter 23
-    "https://vymanga.com/read/emergency-youth-record-book/2837547",  # Chapter 24
-    "https://vymanga.com/read/emergency-youth-record-book/2843826",  # Chapter 25
-    "https://vymanga.com/read/emergency-youth-record-book/2850566",  # Chapter 26
-    "https://vymanga.com/read/emergency-youth-record-book/2857068",  # Chapter 27
+    "https://vymanga.com/read/emergency-youth-record-book/2857068",
+    "https://vymanga.com/read/emergency-youth-record-book/2866085",
+    "https://vymanga.com/read/emergency-youth-record-book/2875357",
+    "https://vymanga.com/read/emergency-youth-record-book/2884243",
+    "https://vymanga.com/read/emergency-youth-record-book/2887531",
+    "https://vymanga.com/read/emergency-youth-record-book/2893815",
+    "https://vymanga.com/read/emergency-youth-record-book/2899209",
+    "https://vymanga.com/read/emergency-youth-record-book/2912781",
+    "https://vymanga.com/read/emergency-youth-record-book/2924610",
+    "https://vymanga.com/read/emergency-youth-record-book/2931143",
+    "https://vymanga.com/read/emergency-youth-record-book/2947083",
+    "https://vymanga.com/read/emergency-youth-record-book/2951063",
+    "https://vymanga.com/read/emergency-youth-record-book/2953901",
+    "https://vymanga.com/read/emergency-youth-record-book/2959988",
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking
