@@ -1,7 +1,19 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-    "https://vymanga.com/read/senza-replica/2405474",
+    "https://vymanga.com/read/senza-replica/2544612",  # Chapter 23
+    "https://vymanga.com/read/senza-replica/2551226",  # Chapter 24
+    "https://vymanga.com/read/senza-replica/2559667",  # Chapter 25
+    "https://vymanga.com/read/senza-replica/2567589",  # Chapter 26
+    "https://vymanga.com/read/senza-replica/2573121",  # Chapter 27
+    "https://vymanga.com/read/senza-replica/2581213",  # Chapter 28
+    "https://vymanga.com/read/senza-replica/2586783",  # Chapter 29
+    "https://vymanga.com/read/senza-replica/2592815",  # Chapter 30
+    "https://vymanga.com/read/senza-replica/2600968",  # Chapter 31
+    "https://vymanga.com/read/senza-replica/2607536",  # Chapter 32
+    "https://vymanga.com/read/senza-replica/2614922",  # Chapter 33
+    "https://vymanga.com/read/senza-replica/2621516",  # Chapter 34
+    "https://vymanga.com/read/senza-replica/2627447",  # Chapter 35
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking
