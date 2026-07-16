@@ -1,19 +1,25 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-    "https://vymanga.com/read/senza-replica/2544612",  # Chapter 23
-    "https://vymanga.com/read/senza-replica/2551226",  # Chapter 24
-    "https://vymanga.com/read/senza-replica/2559667",  # Chapter 25
-    "https://vymanga.com/read/senza-replica/2567589",  # Chapter 26
-    "https://vymanga.com/read/senza-replica/2573121",  # Chapter 27
-    "https://vymanga.com/read/senza-replica/2581213",  # Chapter 28
-    "https://vymanga.com/read/senza-replica/2586783",  # Chapter 29
-    "https://vymanga.com/read/senza-replica/2592815",  # Chapter 30
-    "https://vymanga.com/read/senza-replica/2600968",  # Chapter 31
-    "https://vymanga.com/read/senza-replica/2607536",  # Chapter 32
-    "https://vymanga.com/read/senza-replica/2614922",  # Chapter 33
-    "https://vymanga.com/read/senza-replica/2621516",  # Chapter 34
-    "https://vymanga.com/read/senza-replica/2627447",  # Chapter 35
+    "https://vymanga.com/read/senza-replica/2405474",
+    "https://vymanga.com/read/senza-replica/2412182",
+    "https://vymanga.com/read/senza-replica/2429533",
+    "https://vymanga.com/read/senza-replica/2442704",
+    "https://vymanga.com/read/senza-replica/2442706",
+    "https://vymanga.com/read/senza-replica/2451515",
+    "https://vymanga.com/read/senza-replica/2459679",
+    "https://vymanga.com/read/senza-replica/2466899",
+    "https://vymanga.com/read/senza-replica/2474144",
+    "https://vymanga.com/read/senza-replica/2485260",
+    "https://vymanga.com/read/senza-replica/2488050",
+    "https://vymanga.com/read/senza-replica/2496498",
+    "https://vymanga.com/read/senza-replica/2505201",
+    "https://vymanga.com/read/senza-replica/2513857",
+    "https://vymanga.com/read/senza-replica/2513773",
+    "https://vymanga.com/read/senza-replica/2525756",
+    "https://vymanga.com/read/senza-replica/2534322",
+    "https://vymanga.com/read/senza-replica/2532333",
+    "https://vymanga.com/read/senza-replica/2538243",
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking
