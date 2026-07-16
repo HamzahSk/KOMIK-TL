@@ -1,21 +1,25 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-    "https://vymanga.com/read/emergency-youth-record-book/2959988",
-    "https://vymanga.com/read/emergency-youth-record-book/2977022",
-    "https://vymanga.com/read/emergency-youth-record-book/3022157",
-    "https://vymanga.com/read/emergency-youth-record-book/3027534",  # Chapter 42.1
-    "https://vymanga.com/read/emergency-youth-record-book/3025425",
-    "https://vymanga.com/read/emergency-youth-record-book/3034205",  # Chapter 43.1
-    "https://vymanga.com/read/emergency-youth-record-book/3034206",
-    "https://vymanga.com/read/emergency-youth-record-book/3042422",
-    "https://vymanga.com/read/emergency-youth-record-book/3051985",
-    "https://vymanga.com/read/emergency-youth-record-book/3064126",
-    "https://vymanga.com/read/emergency-youth-record-book/3084952",
-    "https://vymanga.com/read/emergency-youth-record-book/3096635",
-    "https://vymanga.com/read/emergency-youth-record-book/3112770",
-    "https://vymanga.com/read/emergency-youth-record-book/3125143",
-    "https://vymanga.com/read/emergency-youth-record-book/3125144",
+    "https://vymanga.com/read/senza-replica/2405474",
+    "https://vymanga.com/read/senza-replica/2412182",
+    "https://vymanga.com/read/senza-replica/2429533",
+    "https://vymanga.com/read/senza-replica/2442704",
+    "https://vymanga.com/read/senza-replica/2442706",
+    "https://vymanga.com/read/senza-replica/2451515",
+    "https://vymanga.com/read/senza-replica/2459679",
+    "https://vymanga.com/read/senza-replica/2466899",
+    "https://vymanga.com/read/senza-replica/2474144",
+    "https://vymanga.com/read/senza-replica/2485260",
+    "https://vymanga.com/read/senza-replica/2488050",
+    "https://vymanga.com/read/senza-replica/2496498",
+    "https://vymanga.com/read/senza-replica/2505201",
+    "https://vymanga.com/read/senza-replica/2513857",
+    "https://vymanga.com/read/senza-replica/2513773",
+    "https://vymanga.com/read/senza-replica/2525756",
+    "https://vymanga.com/read/senza-replica/2534322",
+    "https://vymanga.com/read/senza-replica/2532333",
+    "https://vymanga.com/read/senza-replica/2538243",
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking
