@@ -42,16 +42,29 @@ class Typesetter:
             if bw < 6 or bh < 6: continue
             
             display_text = block.get('translated_text', block['text'])
-            is_single_word = len(display_text.split()) <= 1
+            words = display_text.upper().split()
+            is_single_word = len(words) <= 1
+            
+            # --- OPTIMASI KHUSUS UNTUK SFX / TEKS MIRING ---
+            max_font_limit = 100
+            if is_single_word:
+                aspect_ratio = bw / max(1, bh)
+                # Jika kotak terlalu lebar (khas SFX miring/memanjang), persempit area cetak (mepetkan)
+                if aspect_ratio > 1.5:
+                    # Kurangi lebar target pencocokan teks agar font dipaksa mengecil
+                    bw = int(bw * 0.6) 
+                    # Batasi font agar tidak menjadi raksasa menutupi layar
+                    max_font_limit = min(40, int(bh * 0.7))
+            # -----------------------------------------------
             
             font_size = int(block.get('orig_line_height', bh) * 0.8)
-            font_size = max(10, min(100, font_size)) 
+            font_size = max(10, min(max_font_limit, font_size)) 
             
             while font_size > 8:
                 font = ImageFont.truetype(font_path, font_size) if os.path.exists(font_path) else ImageFont.load_default()
                 lines, current_line = [], []
                 
-                for word in display_text.upper().split():
+                for word in words:
                     test_line = ' '.join(current_line + [word]) if current_line else word
                     test_bbox = draw.textbbox((0, 0), test_line, font=font)
                     if (test_bbox[2] - test_bbox[0]) <= bw * 0.95:
@@ -71,17 +84,19 @@ class Typesetter:
 
             current_y = box[1] + (bh - total_height) // 2
             
+            # Hitung ulang bw asli untuk penempatan posisi horizontal di tengah box semula
+            orig_bw = box[2] - box[0]
+            
             for line in lines:
                 cw = draw.textbbox((0, 0), line, font=font)[2] - draw.textbbox((0, 0), line, font=font)[0]
-                cx = box[0] + (bw - cw) // 2
+                # Posisikan tetap di tengah-tengah bounding box asli
+                cx = box[0] + (orig_bw - cw) // 2
                 
-                # --- PERUBAHAN OPTIMASI PILLOW ---
                 if is_single_word:
-                    stroke_w = max(2, int(font_size * 0.12))
+                    stroke_w = max(2, int(font_size * 0.25))
                 else:
                     stroke_w = max(1, int(font_size * 0.05))
                 
-                # Menggunakan parameter bawaan Pillow yang lebih cepat daripada looping manual X dan Y
                 draw.text(
                     (cx, current_y), 
                     line, 
@@ -90,7 +105,6 @@ class Typesetter:
                     stroke_width=stroke_w, 
                     stroke_fill=block['colors'][1]
                 )
-                # ---------------------------------
                 
                 current_y += line_height
                 
