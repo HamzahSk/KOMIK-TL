@@ -84,25 +84,59 @@ class Typesetter:
             if x2 - x1 < 5 or y2 - y1 < 5: continue
             
             roi_gray = gray[y1:y2, x1:x2]
+            roi_bgr = img_bgr[y1:y2, x1:x2]
             
-            # 1. Cari garis tegas (huruf)
+            # 1. Cari garis tegas (huruf) via Canny
             edges = cv2.Canny(roi_gray, 50, 150)
-            
-            # PERBAIKAN 2: Perkecil ukuran kernel (3x3) dan cukup 1 iterasi agar masker tidak meluber
             kernel = np.ones((3,3), np.uint8)
             dilated = cv2.dilate(edges, kernel, iterations=1)
             
-            # 3. Isi lubang di dalam huruf
+            # Isi lubang di dalam huruf
             contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            
-            # PERBAIKAN 3: Cegah program mengisi area yang terlalu besar (menyelamatkan background)
             box_area = (x2 - x1) * (y2 - y1)
+            edge_mask = np.zeros_like(dilated)
             for cnt in contours:
-                if cv2.contourArea(cnt) < box_area * 0.7: 
-                    cv2.drawContours(dilated, [cnt], -1, 255, -1)
+                if cv2.contourArea(cnt) < box_area * 0.7:
+                    cv2.drawContours(edge_mask, [cnt], -1, 255, -1)
+                else:
+                    # Kalau kontur sangat besar (kemungkinan bukan huruf, tapi
+                    # garis panjang pola background yang ikut ke-Canny), tetap
+                    # gambar sebagai outline tipis, JANGAN di-fill solid.
+                    cv2.drawContours(edge_mask, [cnt], -1, 255, 1)
+            
+            # PERBAIKAN 4: Masking berbasis WARNA. Balon teks komik biasanya
+            # cuma pakai 2 warna solid (isi teks + outline/stroke). Background
+            # berpola (garis radial, screentone, dsb) hampir pasti warnanya
+            # beda dari kombinasi warna teks tsb. Dengan mencocokkan piksel
+            # ke text_color/stroke_color yang sudah dideteksi, kita cuma
+            # menghapus piksel yang benar-benar bagian huruf, dan pola
+            # background di sekitarnya tetap utuh (tidak ikut di-inpaint).
+            text_color, stroke_color = block.get('colors', ((0, 0, 0), (255, 255, 255)))
+            roi_rgb_arr = cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2RGB).astype(np.int16)
+            tc = np.array(text_color, dtype=np.int16)
+            sc = np.array(stroke_color, dtype=np.int16)
+            dist_text = np.linalg.norm(roi_rgb_arr - tc, axis=2)
+            dist_stroke = np.linalg.norm(roi_rgb_arr - sc, axis=2)
+            color_tol = 45
+            color_mask = ((dist_text < color_tol) | (dist_stroke < color_tol)).astype(np.uint8) * 255
+            
+            # Gabungkan: sebuah piksel dianggap "huruf" kalau dia berada di
+            # area edge (kemungkinan tepi/isi huruf) DAN warnanya cocok
+            # dengan warna teks/stroke. Irisan (AND) ini jauh lebih ketat
+            # daripada Canny saja, sehingga garis-garis tipis pola background
+            # yang warnanya berbeda otomatis tersingkir.
+            combined = cv2.bitwise_and(edge_mask, color_mask)
+            
+            # Tutup celah kecil di dalam huruf lalu buang noise 1-2 piksel
+            close_kernel = np.ones((3, 3), np.uint8)
+            combined = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, close_kernel, iterations=2)
+            combined = cv2.morphologyEx(combined, cv2.MORPH_OPEN, close_kernel, iterations=1)
+            
+            # Sedikit dilasi supaya anti-aliasing tepi huruf ikut tertutup
+            final_dilated = cv2.dilate(combined, kernel, iterations=1)
             
             # Tempelkan bentuk persis hurufnya ke mask utama
-            mask[y1:y2, x1:x2] = cv2.bitwise_or(mask[y1:y2, x1:x2], dilated)
+            mask[y1:y2, x1:x2] = cv2.bitwise_or(mask[y1:y2, x1:x2], final_dilated)
             
         # PERBAIKAN 4: Kurangi radius inpaint menjadi 2 atau 3, dan gunakan INPAINT_TELEA (lebih rapi untuk gambar)
         inpainted_bgr = cv2.inpaint(img_bgr, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
