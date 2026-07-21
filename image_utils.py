@@ -10,15 +10,57 @@ from PIL import Image, ImageDraw, ImageFont
 class ImageProcessor:
     @staticmethod
     def detect_colors(pil_img, box):
-        crop = pil_img.crop((max(0, box[0]), max(0, box[1]), min(pil_img.width, box[2]), min(pil_img.height, box[3])))
-        gray_crop = crop.convert("L")
+        # 1. Crop gambar sesuai bounding box (kotak teks)
+        crop = pil_img.crop((
+            max(0, int(box[0])), 
+            max(0, int(box[1])), 
+            min(pil_img.width, int(box[2])), 
+            min(pil_img.height, int(box[3]))
+        ))
         
-        if not gray_crop.getbbox(): 
+        # 2. Ubah ke numpy array RGB
+        img_np = np.array(crop.convert("RGB"))
+        
+        # Keamanan: Jika crop gagal atau terlalu kecil, pakai warna default hitam-putih
+        if img_np.size == 0 or img_np.shape[0] < 3 or img_np.shape[1] < 3:
             return (0, 0, 0), (255, 255, 255)
             
-        if np.mean(np.array(gray_crop)) > 127: 
+        # 3. Ratakan piksel menjadi 2D array untuk K-Means
+        pixels = img_np.reshape((-1, 3)).astype(np.float32)
+        
+        # 4. Terapkan K-Means Clustering dengan K=2 (Mencari 2 warna dominan)
+        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0)
+        K = 2
+        
+        try:
+            _, labels, centers = cv2.kmeans(pixels, K, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS)
+            
+            # Ubah format hasil warna kembali ke integer
+            centers = np.uint8(centers)
+            
+            # Hitung jumlah piksel untuk masing-masing kelompok warna
+            counts = np.bincount(labels.flatten())
+            
+            # Logika: Di dalam bounding box OCR, area background/bubble biasanya
+            # memakan ruang lebih banyak daripada garis huruf itu sendiri.
+            # Jadi, warna dengan jumlah piksel terbanyak = Background/Stroke
+            # Warna dengan jumlah piksel lebih sedikit = Teks
+            bg_idx = np.argmax(counts)
+            text_idx = 1 - bg_idx 
+            
+            text_color = tuple(int(c) for c in centers[text_idx])
+            stroke_color = tuple(int(c) for c in centers[bg_idx])
+            
+            # Pastikan teks tetap kontras (jika warnanya ternyata sama/mirip, jadikan hitam putih)
+            if sum(abs(t - b) for t, b in zip(text_color, stroke_color)) < 50:
+                return (0, 0, 0), (255, 255, 255)
+                
+            return text_color, stroke_color
+            
+        except Exception as e:
+            # Fallback jika perhitungan gagal
             return (0, 0, 0), (255, 255, 255)
-        return (255, 255, 255), (0, 0, 0)
+
 
 class Typesetter:
     @staticmethod
