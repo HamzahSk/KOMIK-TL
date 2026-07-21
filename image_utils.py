@@ -24,28 +24,47 @@ class Typesetter:
     @staticmethod
     def apply_text(pil_img, text_blocks, font_path="arial.ttf"):
         # ==========================================
-        # 1. FASE INPAINTING (Menghapus Teks Lama)
+        # 1. FASE INPAINTING (Masking Teks Presisi)
         # ==========================================
-        # Konversi PIL Image ke format Array BGR milik OpenCV
         img_np = np.array(pil_img.convert('RGB'))
         img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+        gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
         
-        # Buat "Mask" hitam kosong seukuran gambar
+        # Buat "Mask" hitam kosong
         mask = np.zeros(img_bgr.shape[:2], dtype=np.uint8)
         
         for block in text_blocks:
             box = block['box']
-            # Perlebar kotak tebasan 3 piksel agar sisa-sisa garis tepi teks benar-benar hilang
-            x1, y1 = max(0, box[0] - 3), max(0, box[1] - 3)
-            x2, y2 = min(img_bgr.shape[1], box[2] + 3), min(img_bgr.shape[0], box[3] + 3)
+            x1, y1 = max(0, int(box[0])), max(0, int(box[1]))
+            x2, y2 = min(img_bgr.shape[1], int(box[2])), min(img_bgr.shape[0], int(box[3]))
             
-            # Gambar kotak putih (255) di area mask yang ingin dihapus
-            cv2.rectangle(mask, (x1, y1), (x2, y2), 255, -1)
+            if x2 <= x1 or y2 <= y1: continue
             
-        # Eksekusi Inpainting (TELEA Algorithm: Cepat dan cukup bagus untuk gradasi)
-        inpainted_bgr = cv2.inpaint(img_bgr, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+            # Ambil potongan gambar khusus di area kotak teks
+            roi_gray = gray[y1:y2, x1:x2]
+            
+            # Cek apakah background terang (teks gelap) atau background gelap (teks terang)
+            mean_val = np.mean(roi_gray)
+            
+            # Gunakan Otsu Thresholding untuk mengekstrak bentuk presisi hurufnya
+            if mean_val > 127: 
+                # Background putih/terang, ambil piksel teks yang hitam
+                _, thresh = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+            else:
+                # Background hitam/gelap, ambil piksel teks yang putih
+                _, thresh = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            
+            # Tebalkan cetakan hurufnya sedikit (2 piksel) agar sisa pinggiran teks ikut terhapus
+            kernel = np.ones((3,3), np.uint8)
+            dilated_thresh = cv2.dilate(thresh, kernel, iterations=1)
+            
+            # Gabungkan cetakan huruf ini ke mask utama
+            mask[y1:y2, x1:x2] = cv2.bitwise_or(mask[y1:y2, x1:x2], dilated_thresh)
+            
+        # Eksekusi Inpainting HANYA pada jalur piksel huruf
+        # Gunakan INPAINT_NS (Navier-Stokes) yang biasanya lebih halus untuk gradasi
+        inpainted_bgr = cv2.inpaint(img_bgr, mask, inpaintRadius=3, flags=cv2.INPAINT_NS)
         
-        # Kembalikan hasilnya ke PIL Image agar bisa ditulisi teks
         inpainted_rgb = cv2.cvtColor(inpainted_bgr, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(inpainted_rgb)
 
@@ -61,7 +80,6 @@ class Typesetter:
             words = display_text.upper().split()
             is_single_word = len(words) <= 1
             
-            # PERBAIKAN SFX: Ukuran font dimaksimalkan untuk teks satu kata
             max_font_limit = 150 
             font_size = int(block.get('orig_line_height', bh) * 0.9)
             font_size = max(10, min(max_font_limit, font_size)) 
@@ -70,7 +88,6 @@ class Typesetter:
                 font = ImageFont.truetype(font_path, font_size) if os.path.exists(font_path) else ImageFont.load_default()
                 lines, current_line = [], []
                 
-                # Fungsi bantuan untuk hitung lebar teks
                 def get_tw(text):
                     bb = font.getbbox(text)
                     return bb[2] - bb[0] if bb else 0
@@ -78,7 +95,6 @@ class Typesetter:
                 for word in words:
                     word_width = get_tw(word)
                     
-                    # LOGIKA HYPHENATION (Pemenggalan Kata)
                     if word_width > bw * 0.95:
                         if current_line:
                             lines.append(' '.join(current_line))
@@ -127,7 +143,8 @@ class Typesetter:
                 cw = font.getbbox(line)[2] - font.getbbox(line)[0]
                 cx = (orig_bw - cw) // 2
                 
-                stroke_w = max(2, int(font_size * 0.25)) if is_single_word else max(1, int(font_size * 0.05))
+                # PERBAIKAN STROKE SFX: Diubah jadi 8% (0.08) agar tidak nge-blok menutupi gambar
+                stroke_w = max(2, int(font_size * 0.08)) if is_single_word else max(1, int(font_size * 0.05))
                 
                 txt_draw.text(
                     (cx, current_y), 
@@ -139,7 +156,6 @@ class Typesetter:
                 )
                 current_y += line_height
             
-            # Logika Kemiringan Teks
             angle = block.get('angle', 0.0)
             if abs(angle) > 3: 
                 txt_canvas = txt_canvas.rotate(-angle, expand=True, resample=Image.BICUBIC)
