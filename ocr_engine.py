@@ -68,14 +68,17 @@ class OCREngine:
 
     def _merge_dialog_bubbles(self, lines):
         if not lines: return []
-        lines.sort(key=lambda item: item['box'][1])
+        
+        # 1. Urutkan berdasarkan titik tengah vertikal (Center Y)
+        # Ini penting agar teks miring tetap berurutan dengan benar meski kotaknya bertabrakan
+        lines.sort(key=lambda item: (item['box'][1] + item['box'][3]) / 2)
+        
         merged, visited = [], set()
         
         for i in range(len(lines)):
             if i in visited: continue
             base = lines[i]
             visited.add(i)
-            # Simpan angle dalam list untuk dirata-rata nanti
             group_boxes, combined_text, group_angles = [base['box']], [base['text']], [base['angle']]
             
             for j in range(i + 1, len(lines)):
@@ -84,13 +87,24 @@ class OCREngine:
                 prev_box = group_boxes[-1] 
                 min_h = min(prev_box[3] - prev_box[1], next_box[3] - next_box[1])
                 
-                is_vertically_close = (-min_h * 1.0) <= (next_box[1] - prev_box[3]) <= max(5, min_h * 0.5)
-                is_horizontally_aligned = (min(prev_box[2], next_box[2]) - max(prev_box[0], next_box[0])) > 0 and (abs((prev_box[0] + prev_box[2])/2 - (next_box[0] + next_box[2])/2) < max(prev_box[2] - prev_box[0], next_box[2] - next_box[0]) * 0.5)
+                # 2. Toleransi overlap (negatif) dibesarkan drastis untuk kasus teks miring di layar HP.
+                # Toleransi jarak (positif) dijaga tetap ketat agar teks beda balon tidak menyatu.
+                is_vertically_close = (-min_h * 2.5) <= (next_box[1] - prev_box[3]) <= max(8, min_h * 0.8)
                 
-                if (max(prev_box[3] - prev_box[1], next_box[3] - next_box[1]) / max(1, min_h) < 1.6) and is_vertically_close and is_horizontally_aligned:
+                # 3. Keselarasan horizontal menggunakan Center X agar lebih fleksibel
+                prev_cx = (prev_box[0] + prev_box[2]) / 2
+                next_cx = (next_box[0] + next_box[2]) / 2
+                max_w = max(prev_box[2] - prev_box[0], next_box[2] - next_box[0])
+                
+                is_horizontally_aligned = abs(prev_cx - next_cx) < (max_w * 0.75)
+                
+                # 4. Syarat keamanan ekstra: Sudut kemiringan harus mirip (toleransi 10 derajat).
+                is_angle_similar = abs(lines[j]['angle'] - group_angles[-1]) < 10
+                
+                if is_vertically_close and is_horizontally_aligned and is_angle_similar:
                     combined_text.append(lines[j]['text'])
                     group_boxes.append(next_box)
-                    group_angles.append(lines[j]['angle']) # <-- Tambahkan angle
+                    group_angles.append(lines[j]['angle'])
                     visited.add(j)
 
             min_x, min_y = min([b[0] for b in group_boxes]), min([b[1] for b in group_boxes])
@@ -104,7 +118,7 @@ class OCREngine:
                     "text": gabungan_teks,
                     "box": [min_x, min_y, max_x, max_y], 
                     "orig_line_height": sum([b[3] - b[1] for b in group_boxes]) / len(group_boxes),
-                    "angle": sum(group_angles) / len(group_angles) # <-- Hitung rata-rata kemiringan teks yang digabung
+                    "angle": sum(group_angles) / len(group_angles)
                 })
                 
         return merged
