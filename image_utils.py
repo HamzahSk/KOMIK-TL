@@ -77,7 +77,7 @@ class Typesetter:
         
         for block in text_blocks:
             box = block['box']
-            pad = 3 # Padding aman untuk cover shadow/outline
+            pad = 3 
             x1, y1 = max(0, int(box[0]) - pad), max(0, int(box[1]) - pad)
             x2, y2 = min(img_bgr.shape[1], int(box[2]) + pad), min(img_bgr.shape[0], int(box[3]) + pad)
             
@@ -85,36 +85,43 @@ class Typesetter:
             
             roi_gray = gray[y1:y2, x1:x2]
             
-            # --- KOMBINASI CANNY & ADAPTIVE THRESHOLDING ---
-            # --- KOMBINASI CANNY & ADAPTIVE THRESHOLDING ---
-            # 1. Canny Edge untuk menangkap garis tajam pada huruf
+            # --- IMPLEMENTASI MASKING OPTIMAL ---
+            
+            # 1. Canny Edge untuk menangkap outline tegas huruf
             edges = cv2.Canny(roi_gray, 30, 120) 
             
-            # 2. Kurangi sensitivitas threshold (ubah ke 21, 5) 
-            # agar tekstur rambut/screentone tidak ikut terhapus
-            thresh = cv2.adaptiveThreshold(
-                roi_gray, 255, 
-                cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                cv2.THRESH_BINARY_INV, 21, 5
-            )
+            # 2. Global Threshold + Otsu (Otsu akan mencari batas ideal secara dinamis,
+            # sehingga aman dari efek glow yang biasanya mengecoh Adaptive Threshold)
+            _, thresh = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
             
+            # 3. Gabungkan agar isi huruf dan garis terluarnya masuk
             combined_mask = cv2.bitwise_or(edges, thresh)
             
-            # 3. Filter noise (tekstur background/rambut) dengan Morphological Opening
-            kernel_clean = np.ones((2,2), np.uint8)
-            cleaned_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_OPEN, kernel_clean)
+            # 4. Tutup rongga dengan kernel Ellipse agar lekukan huruf tetap natural
+            kernel_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+            closed = cv2.morphologyEx(combined_mask, cv2.MORPH_CLOSE, kernel_close)
             
-            # 4. Dilate secukupnya supaya outline huruf ikut terhapus
-            kernel_dilate = np.ones((3,3), np.uint8)
-            dilated = cv2.dilate(cleaned_mask, kernel_dilate, iterations=1)
+            # 5. Dilasi halus dengan kernel Ellipse 2x2 (tidak seagresif kotak 3x3)
+            kernel_dilate = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2))
+            dilated = cv2.dilate(closed, kernel_dilate, iterations=1)
             
-            # 5. LANGSUNG terapkan ke mask utama.
-            # (HAPUS fungsi drawContours di sini agar tidak mem-fill area menjadi kotak)
-            mask[y1:y2, x1:x2] = cv2.bitwise_or(mask[y1:y2, x1:x2], dilated)
+            # 6. Filter kontur berdasarkan luas area untuk membuang noise (glow/screentone)
+            contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            clean_mask = np.zeros_like(dilated)
             
-        # Gunakan inpaintRadius = 3 (turunkan dari 5) agar percampuran warna lebih presisi di area sempit
-        inpainted_bgr = cv2.inpaint(img_bgr, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
-
+            for cnt in contours:
+                area = cv2.contourArea(cnt)
+                # Abaikan kotoran atau sisa efek background yang luasnya < 20 piksel
+                if area < 20: 
+                    continue
+                # Gambar kontur (huruf) yang valid saja
+                cv2.drawContours(clean_mask, [cnt], -1, 255, -1)
+            
+            # 7. Tambahkan hasil filter bersih ke mask utama
+            mask[y1:y2, x1:x2] = cv2.bitwise_or(mask[y1:y2, x1:x2], clean_mask)
+            
+        # 8. Radius inpaint diturunkan ke 2 untuk mencegah blurring berlebih pada background di sekitarnya
+        inpainted_bgr = cv2.inpaint(img_bgr, mask, inpaintRadius=2, flags=cv2.INPAINT_TELEA)
         
         inpainted_rgb = cv2.cvtColor(inpainted_bgr, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(inpainted_rgb)
@@ -202,7 +209,6 @@ class Typesetter:
                 cw = font.getbbox(line)[2] - font.getbbox(line)[0]
                 cx = (orig_bw - cw) // 2
                 
-                # Cek ketersediaan colors sebelum dipanggil (mencegah error jika dictionary tidak lengkap)
                 fill_color = block['colors'][0] if 'colors' in block else (0,0,0)
                 stroke_color = block['colors'][1] if 'colors' in block else (255,255,255)
                 
@@ -226,6 +232,7 @@ class Typesetter:
             pil_img.paste(txt_canvas, (paste_x, paste_y), txt_canvas)
                 
         return pil_img
+
 
 def download_image(url, save_path, chapter_url=""):
     headers = {
