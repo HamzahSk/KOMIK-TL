@@ -1,68 +1,69 @@
-# image_utils.py
 import os
 import requests
 import concurrent.futures
 import numpy as np
-import cv2 # Tambahkan ini di deretan import atas
+import cv2
+import re # Tambahkan untuk membersihkan teks
 
 from PIL import Image, ImageDraw, ImageFont
 
 class ImageProcessor:
     @staticmethod
     def detect_colors(pil_img, box):
-        # 1. Crop gambar sesuai bounding box (kotak teks)
+        # 1. Crop gambar sesuai bounding box
+        # Kita tambahkan sedikit padding ke dalam (shrink) agar K-means 
+        # tidak terlalu banyak menangkap background luar/garis panel
+        pad = 2
         crop = pil_img.crop((
-            max(0, int(box[0])), 
-            max(0, int(box[1])), 
-            min(pil_img.width, int(box[2])), 
-            min(pil_img.height, int(box[3]))
+            max(0, int(box[0]) + pad), 
+            max(0, int(box[1]) + pad), 
+            min(pil_img.width, int(box[2]) - pad), 
+            min(pil_img.height, int(box[3]) - pad)
         ))
         
-        # 2. Ubah ke numpy array RGB
         img_np = np.array(crop.convert("RGB"))
         
-        # Keamanan: Jika crop gagal atau terlalu kecil, pakai warna default hitam-putih
         if img_np.size == 0 or img_np.shape[0] < 3 or img_np.shape[1] < 3:
             return (0, 0, 0), (255, 255, 255)
             
-        # 3. Ratakan piksel menjadi 2D array untuk K-Means
         pixels = img_np.reshape((-1, 3)).astype(np.float32)
         
-        # 4. Terapkan K-Means Clustering dengan K=2 (Mencari 2 warna dominan)
         criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0)
         K = 2
         
         try:
             _, labels, centers = cv2.kmeans(pixels, K, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS)
-            
-            # Ubah format hasil warna kembali ke integer
             centers = np.uint8(centers)
-            
-            # Hitung jumlah piksel untuk masing-masing kelompok warna
             counts = np.bincount(labels.flatten())
             
-            # Logika: Di dalam bounding box OCR, area background/bubble biasanya
-            # memakan ruang lebih banyak daripada garis huruf itu sendiri.
-            # Jadi, warna dengan jumlah piksel terbanyak = Background/Stroke
-            # Warna dengan jumlah piksel lebih sedikit = Teks
             bg_idx = np.argmax(counts)
             text_idx = 1 - bg_idx 
             
             text_color = tuple(int(c) for c in centers[text_idx])
             stroke_color = tuple(int(c) for c in centers[bg_idx])
             
-            # Pastikan teks tetap kontras (jika warnanya ternyata sama/mirip, jadikan hitam putih)
-            if sum(abs(t - b) for t, b in zip(text_color, stroke_color)) < 50:
-                return (0, 0, 0), (255, 255, 255)
+            # Jika kontras terlalu rendah, paksa jadi Hitam & Putih (berdasarkan luminansi)
+            lum_text = 0.299*text_color[0] + 0.587*text_color[1] + 0.114*text_color[2]
+            lum_bg = 0.299*stroke_color[0] + 0.587*stroke_color[1] + 0.114*stroke_color[2]
+            
+            if abs(lum_text - lum_bg) < 60:
+                return (0, 0, 0), (255, 255, 255) # Default aman
                 
             return text_color, stroke_color
             
-        except Exception as e:
-            # Fallback jika perhitungan gagal
+        except Exception:
             return (0, 0, 0), (255, 255, 255)
 
 
 class Typesetter:
+    @staticmethod
+    def clean_text_for_rendering(text):
+        # Membersihkan karakter aneh yang tidak disupport font default (mencegah artefak wajik )
+        text = text.replace('…', '...')
+        # Hapus spasi zero-width atau karakter unicode yang tidak standar
+        text = re.sub(r'[^\x00-\x7F]+', '', text) 
+        return text.strip()
+
     @staticmethod
     def apply_text(pil_img, text_blocks, font_path="arial.ttf"):
         # ==========================================
@@ -76,74 +77,33 @@ class Typesetter:
         
         for block in text_blocks:
             box = block['box']
-            # PERBAIKAN 1: Perkecil padding agar tidak menangkap garis di luar teks (misal: rambut)
-            pad = 2 
+            pad = 2 # Kurangi padding agar tidak merusak background sekitar
             x1, y1 = max(0, int(box[0]) - pad), max(0, int(box[1]) - pad)
             x2, y2 = min(img_bgr.shape[1], int(box[2]) + pad), min(img_bgr.shape[0], int(box[3]) + pad)
             
             if x2 - x1 < 5 or y2 - y1 < 5: continue
             
             roi_gray = gray[y1:y2, x1:x2]
-            roi_bgr = img_bgr[y1:y2, x1:x2]
             
-            # 1. Cari garis tegas (huruf) via Canny
-            edges = cv2.Canny(roi_gray, 50, 150)
+            # Gunakan threshold Canny yang lebih spesifik
+            edges = cv2.Canny(roi_gray, 100, 200)
+            
+            # PERBAIKAN: Kurangi agresivitas kernel. (3,3) dan iterasi 1 sudah cukup.
+            # Ini mencegah masking meluber ke rambut/petir di background.
             kernel = np.ones((3,3), np.uint8)
             dilated = cv2.dilate(edges, kernel, iterations=1)
             
-            # Isi lubang di dalam huruf
             contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            box_area = (x2 - x1) * (y2 - y1)
-            edge_mask = np.zeros_like(dilated)
-            for cnt in contours:
-                if cv2.contourArea(cnt) < box_area * 0.7:
-                    cv2.drawContours(edge_mask, [cnt], -1, 255, -1)
-                else:
-                    # Kalau kontur sangat besar (kemungkinan bukan huruf, tapi
-                    # garis panjang pola background yang ikut ke-Canny), tetap
-                    # gambar sebagai outline tipis, JANGAN di-fill solid.
-                    cv2.drawContours(edge_mask, [cnt], -1, 255, 1)
+            cv2.drawContours(dilated, contours, -1, 255, -1)
             
-            # PERBAIKAN 4: Masking berbasis WARNA. Balon teks komik biasanya
-            # cuma pakai 2 warna solid (isi teks + outline/stroke). Background
-            # berpola (garis radial, screentone, dsb) hampir pasti warnanya
-            # beda dari kombinasi warna teks tsb. Dengan mencocokkan piksel
-            # ke text_color/stroke_color yang sudah dideteksi, kita cuma
-            # menghapus piksel yang benar-benar bagian huruf, dan pola
-            # background di sekitarnya tetap utuh (tidak ikut di-inpaint).
-            text_color, stroke_color = block.get('colors', ((0, 0, 0), (255, 255, 255)))
-            roi_rgb_arr = cv2.cvtColor(roi_bgr, cv2.COLOR_BGR2RGB).astype(np.int16)
-            tc = np.array(text_color, dtype=np.int16)
-            sc = np.array(stroke_color, dtype=np.int16)
-            dist_text = np.linalg.norm(roi_rgb_arr - tc, axis=2)
-            dist_stroke = np.linalg.norm(roi_rgb_arr - sc, axis=2)
-            color_tol = 45
-            color_mask = ((dist_text < color_tol) | (dist_stroke < color_tol)).astype(np.uint8) * 255
+            mask[y1:y2, x1:x2] = cv2.bitwise_or(mask[y1:y2, x1:x2], dilated)
             
-            # Gabungkan: sebuah piksel dianggap "huruf" kalau dia berada di
-            # area edge (kemungkinan tepi/isi huruf) DAN warnanya cocok
-            # dengan warna teks/stroke. Irisan (AND) ini jauh lebih ketat
-            # daripada Canny saja, sehingga garis-garis tipis pola background
-            # yang warnanya berbeda otomatis tersingkir.
-            combined = cv2.bitwise_and(edge_mask, color_mask)
-            
-            # Tutup celah kecil di dalam huruf lalu buang noise 1-2 piksel
-            close_kernel = np.ones((3, 3), np.uint8)
-            combined = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, close_kernel, iterations=2)
-            combined = cv2.morphologyEx(combined, cv2.MORPH_OPEN, close_kernel, iterations=1)
-            
-            # Sedikit dilasi supaya anti-aliasing tepi huruf ikut tertutup
-            final_dilated = cv2.dilate(combined, kernel, iterations=1)
-            
-            # Tempelkan bentuk persis hurufnya ke mask utama
-            mask[y1:y2, x1:x2] = cv2.bitwise_or(mask[y1:y2, x1:x2], final_dilated)
-            
-        # PERBAIKAN 4: Kurangi radius inpaint menjadi 2 atau 3, dan gunakan INPAINT_TELEA (lebih rapi untuk gambar)
+        # Gunakan inpaintRadius yang lebih kecil agar smudge/bercak lebih minim
         inpainted_bgr = cv2.inpaint(img_bgr, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
         
         inpainted_rgb = cv2.cvtColor(inpainted_bgr, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(inpainted_rgb)
-        
+
         # ==========================================
         # 2. FASE TYPESETTING (Menempel Teks Baru)
         # ==========================================
@@ -152,12 +112,16 @@ class Typesetter:
             bw, bh = box[2] - box[0], box[3] - box[1]
             if bw < 6 or bh < 6: continue
             
-            display_text = block.get('translated_text', block['text'])
+            raw_text = block.get('translated_text', block['text'])
+            display_text = Typesetter.clean_text_for_rendering(raw_text)
+            
             words = display_text.upper().split()
+            if not words: continue
+            
             is_single_word = len(words) <= 1
             
-            max_font_limit = 150 
-            font_size = int(block.get('orig_line_height', bh) * 0.9)
+            max_font_limit = 120 
+            font_size = int(block.get('orig_line_height', bh) * 0.85) # Kurangi sedikit agar ada ruang nafas
             font_size = max(10, min(max_font_limit, font_size)) 
             
             while font_size > 8:
@@ -171,7 +135,7 @@ class Typesetter:
                 for word in words:
                     word_width = get_tw(word)
                     
-                    if word_width > bw * 0.95:
+                    if word_width > bw * 0.90:
                         if current_line:
                             lines.append(' '.join(current_line))
                             current_line = []
@@ -182,7 +146,7 @@ class Typesetter:
                                 suffix = "-" if i < len(temp_word) else ""
                                 part = temp_word[:i] + suffix
                                 
-                                if get_tw(part) <= bw * 0.95 or i == 1:
+                                if get_tw(part) <= bw * 0.90 or i == 1:
                                     if i == len(temp_word):
                                         current_line = [part]
                                     else:
@@ -191,7 +155,7 @@ class Typesetter:
                                     break
                     else:
                         test_line = ' '.join(current_line + [word]) if current_line else word
-                        if get_tw(test_line) <= bw * 0.95:
+                        if get_tw(test_line) <= bw * 0.90:
                             current_line.append(word)
                         else:
                             if current_line:
@@ -201,7 +165,9 @@ class Typesetter:
                 if current_line: 
                     lines.append(' '.join(current_line))
                 
-                line_height = font.getbbox("A")[3] - font.getbbox("A")[1] + int(font_size * 0.45)
+                # Kalkulasi tinggi baris yang lebih aman untuk berbagai font
+                bbox = font.getbbox("Ay")
+                line_height = (bbox[3] - bbox[1]) + int(font_size * 0.2)
                 total_height = len(lines) * line_height
                 
                 if total_height <= bh * 0.95:
@@ -209,25 +175,30 @@ class Typesetter:
                 font_size -= 1
 
             orig_bw = box[2] - box[0]
-            
             txt_canvas = Image.new('RGBA', (orig_bw, bh), (0, 0, 0, 0))
             txt_draw = ImageDraw.Draw(txt_canvas)
             
             current_y = (bh - total_height) // 2
             
+            # PERBAIKAN: Kalkulasi Stroke yang lebih proporsional agar tidak menabrak dan tajam
+            stroke_w = 2 if is_single_word else max(1, int(font_size * 0.03))
+            if font_size < 14: stroke_w = 0 # Matikan stroke jika font terlalu kecil
+            
             for line in lines:
                 cw = font.getbbox(line)[2] - font.getbbox(line)[0]
                 cx = (orig_bw - cw) // 2
                 
-                stroke_w = max(2, int(font_size * 0.08)) if is_single_word else max(1, int(font_size * 0.05))
+                # Gunakan warna yang didapat dari K-Means
+                fill_color = block['colors'][0]
+                stroke_color = block['colors'][1]
                 
                 txt_draw.text(
                     (cx, current_y), 
                     line, 
                     font=font, 
-                    fill=block['colors'][0], 
+                    fill=fill_color, 
                     stroke_width=stroke_w, 
-                    stroke_fill=block['colors'][1]
+                    stroke_fill=stroke_color
                 )
                 current_y += line_height
             
