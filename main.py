@@ -119,7 +119,8 @@ def main():
             "WHOOSH": "WUSSS",
             "SLAP": "PLAK",
             "SIGH": "HAHH",
-            "UHH": "EHH"
+            "UHH": "EHH",
+            "SPRING": "SPRING"
         }
 
         for path in final_paths: 
