@@ -61,20 +61,55 @@ class Typesetter:
                 font = ImageFont.truetype(font_path, font_size) if os.path.exists(font_path) else ImageFont.load_default()
                 lines, current_line = [], []
                 
+                # Fungsi bantuan untuk hitung lebar teks
+                def get_tw(text):
+                    bb = font.getbbox(text)
+                    return bb[2] - bb[0] if bb else 0
+                
                 for word in words:
-                    test_line = ' '.join(current_line + [word]) if current_line else word
-                    test_bbox = font.getbbox(test_line)
-                    if (test_bbox[2] - test_bbox[0]) <= bw * 0.95:
-                        current_line.append(word)
-                    else:
+                    word_width = get_tw(word)
+                    
+                    # LOGIKA HYPHENATION (Pemenggalan Kata)
+                    if word_width > bw * 0.95:
+                        # Kosongkan current_line kalau ada isinya
                         if current_line:
                             lines.append(' '.join(current_line))
-                        current_line = [word]
-                if current_line: lines.append(' '.join(current_line))
+                            current_line = []
+                            
+                        temp_word = word
+                        while temp_word:
+                            # Cari berapa banyak huruf yang muat di lebar balon
+                            for i in range(len(temp_word), 0, -1):
+                                suffix = "-" if i < len(temp_word) else ""
+                                part = temp_word[:i] + suffix
+                                
+                                if get_tw(part) <= bw * 0.95 or i == 1:
+                                    if i == len(temp_word):
+                                        # Potongan terakhir, jadikan awalan buat kata selanjutnya
+                                        current_line = [part]
+                                    else:
+                                        # Potongan dipenggal dengan "-", langsung masuk baris baru
+                                        lines.append(part)
+                                    
+                                    temp_word = temp_word[i:]
+                                    break
+                    else:
+                        # LOGIKA NORMAL (Jika kata tidak kepanjangan)
+                        test_line = ' '.join(current_line + [word]) if current_line else word
+                        if get_tw(test_line) <= bw * 0.95:
+                            current_line.append(word)
+                        else:
+                            if current_line:
+                                lines.append(' '.join(current_line))
+                            current_line = [word]
+                            
+                if current_line: 
+                    lines.append(' '.join(current_line))
                 
                 line_height = font.getbbox("A")[3] - font.getbbox("A")[1] + int(font_size * 0.45)
                 total_height = len(lines) * line_height
                 
+                # Cek apakah setelah ditambahkan baris baru, tingginya masih muat di balon
                 if total_height <= bh * 0.95:
                     break
                 font_size -= 1

@@ -106,11 +106,21 @@ def main():
                 os.remove(m_path)
 
         # ==========================================
-        # FASE 3: Ekstraksi Teks (OCR) dari Semua Halaman
+        # FASE 3: Ekstraksi Teks & Filter SFX
         # ==========================================
         print(f"Mengekstraksi teks (OCR) dari {len(final_paths)} gambar...")
         page_blocks_list = [] 
-        kumpulan_teks = []    
+        kumpulan_teks_untuk_ai = []    
+        
+        # KAMUS SFX SEDERHANA (Tambahkan kata-kata lain di sini)
+        SFX_DICT = {
+            "DROP": "JATUH",
+            "BAM": "DUAG",
+            "WHOOSH": "WUSSS",
+            "SLAP": "PLAK",
+            "SIGH": "HAHH",
+            "UHH": "EHH"
+        }
 
         for path in final_paths: 
             blocks = ocr.detect_and_merge(path)
@@ -118,25 +128,36 @@ def main():
             if blocks and len(blocks) == 1:
                 if len(blocks[0]['text'].split()) <= 1:
                     blocks = [] 
-
-            page_blocks_list.append((path, blocks))
             
             for b in blocks:
-                kumpulan_teks.append(b['text'])
+                teks_asli = b['text'].upper()
+                kata_kata = teks_asli.split()
+                
+                # Cek jika ini cuma 1 kata (SFX / Suara)
+                if len(kata_kata) == 1:
+                    kata_bersih = re.sub(r'[^A-Z]', '', teks_asli)
+                    if kata_bersih in SFX_DICT:
+                        b['translated_text'] = SFX_DICT[kata_bersih]
+                        continue # Langsung lewati, jangan masukkan ke antrean AI
+                
+                # Jika bukan 1 kata, ATAU 1 kata tapi tidak ada di kamus, kirim ke AI
+                b['ai_index'] = len(kumpulan_teks_untuk_ai)
+                kumpulan_teks_untuk_ai.append(teks_asli)
+                
+            page_blocks_list.append((path, blocks))
 
         # ==========================================
-        # FASE 4: Batch Translation 
+        # FASE 4: Batch Translation (Hanya untuk teks panjang/tak terdaftar)
         # ==========================================
         hasil_terjemahan = []
-        if kumpulan_teks:
-            print(f"Menerjemahkan {len(kumpulan_teks)} blok teks...")
+        if kumpulan_teks_untuk_ai:
+            print(f"Menerjemahkan {len(kumpulan_teks_untuk_ai)} blok dialog via AI...")
             
             current_batch = []
             current_len = 0
             
-            for teks in kumpulan_teks:
+            for teks in kumpulan_teks_untuk_ai:
                 panjang_teks = len(teks)
-                
                 if (current_len + panjang_teks > 1000) or (len(current_batch) >= 25):
                     if current_batch: 
                         hasil_terjemahan.extend(translator.translate_batch(current_batch))
@@ -150,48 +171,43 @@ def main():
             if current_batch:
                 hasil_terjemahan.extend(translator.translate_batch(current_batch))
                 
-            print(f"Selesai menerjemahkan total {len(hasil_terjemahan)} blok teks.")
-        else:
-            print("Tidak ada teks yang perlu diterjemahkan di chapter ini.")
+        # Gabungkan hasil AI kembali ke blok masing-masing
+        for path, blocks in page_blocks_list:
+            for b in blocks:
+                if 'translated_text' not in b: # Jika belum diisi oleh Kamus SFX
+                    idx_ai = b.get('ai_index', -1)
+                    if 0 <= idx_ai < len(hasil_terjemahan):
+                        b['translated_text'] = hasil_terjemahan[idx_ai]
+                    else:
+                        b['translated_text'] = b['text']
 
         # ==========================================
         # FASE 5: Typesetting & Distribusi Kembali
         # ==========================================
         print("Merender teks ke gambar dan menyimpan hasil akhir...")
-        text_index = 0
-        
         for idx, (path, blocks) in enumerate(page_blocks_list):
             final_path = os.path.join(out_dir, f"terjemahan_{str(idx+1).zfill(3)}.webp")
             
             if not blocks:
                 try:
-                    img = Image.open(path).convert("RGB")
-                    img.save(final_path, format="WEBP", quality=80)
-                except Exception as e:
-                    print(f"Gagal menyimpan halaman {idx+1}: {e}")
+                    Image.open(path).convert("RGB").save(final_path, format="WEBP", quality=80)
+                except Exception: pass
                 finally:
                     if os.path.exists(path): os.remove(path)
                 continue
                 
             try:
                 img = Image.open(path).convert("RGB")
-                
                 for b in blocks:
-                    if text_index < len(hasil_terjemahan):
-                        b['translated_text'] = hasil_terjemahan[text_index]
-                    else:
-                        b['translated_text'] = b['text'] 
-                        
                     b['colors'] = ImageProcessor.detect_colors(img, b['box'])
-                    text_index += 1
                     
                 final_img = Typesetter.apply_text(img, blocks, font_path)
                 final_img.save(final_path, format="WEBP", quality=80)
-                
             except Exception as e:
                 print(f"Gagal memproses typesetting halaman {idx+1}: {e}")
             finally:
                 if os.path.exists(path): os.remove(path)
+
                     
         # ==========================================
         # FASE 6: Pengarsipan CBZ
