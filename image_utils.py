@@ -24,46 +24,52 @@ class Typesetter:
     @staticmethod
     def apply_text(pil_img, text_blocks, font_path="arial.ttf"):
         # ==========================================
-        # 1. FASE INPAINTING (Masking Teks Presisi)
+        # 1. FASE INPAINTING (Masking Teks Super Presisi)
         # ==========================================
         img_np = np.array(pil_img.convert('RGB'))
         img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
         gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
         
-        # Buat "Mask" hitam kosong
         mask = np.zeros(img_bgr.shape[:2], dtype=np.uint8)
         
         for block in text_blocks:
             box = block['box']
-            x1, y1 = max(0, int(box[0])), max(0, int(box[1]))
-            x2, y2 = min(img_bgr.shape[1], int(box[2])), min(img_bgr.shape[0], int(box[3]))
+            # Lebarkan kotak 4 piksel agar kita benar-benar menyentuh area background murni di pinggirnya
+            pad = 4
+            x1, y1 = max(0, int(box[0]) - pad), max(0, int(box[1]) - pad)
+            x2, y2 = min(img_bgr.shape[1], int(box[2]) + pad), min(img_bgr.shape[0], int(box[3]) + pad)
             
-            if x2 <= x1 or y2 <= y1: continue
+            if x2 - x1 < 10 or y2 - y1 < 10: continue
             
-            # Ambil potongan gambar khusus di area kotak teks
             roi_gray = gray[y1:y2, x1:x2]
             
-            # Cek apakah background terang (teks gelap) atau background gelap (teks terang)
-            mean_val = np.mean(roi_gray)
+            # Trik Cerdas: Ambil sampel warna dari 4 sisi pinggiran luar kotak
+            top = roi_gray[0, :]
+            bottom = roi_gray[-1, :]
+            left = roi_gray[1:-1, 0]
+            right = roi_gray[1:-1, -1]
+            perimeter = np.concatenate([top, bottom, left, right])
             
-            # Gunakan Otsu Thresholding untuk mengekstrak bentuk presisi hurufnya
-            if mean_val > 127: 
-                # Background putih/terang, ambil piksel teks yang hitam
-                _, thresh = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-            else:
-                # Background hitam/gelap, ambil piksel teks yang putih
-                _, thresh = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            # Gunakan nilai tengah (median) dari pinggiran sebagai "Warna Background Asli"
+            bg_median = np.median(perimeter)
             
-            # Tebalkan cetakan hurufnya sedikit (2 piksel) agar sisa pinggiran teks ikut terhapus
+            # Buat gambar bayangan berisi warna background tersebut
+            bg_img = np.full(roi_gray.shape, bg_median, dtype=np.uint8)
+            
+            # Cari selisih warna: Piksel yang warnanya beda jauh dari background = Teks
+            diff = cv2.absdiff(roi_gray, bg_img)
+            
+            # Jika beda warnanya lebih dari 25, anggap itu teks (jadikan area putih di dalam mask)
+            _, thresh = cv2.threshold(diff, 25, 255, cv2.THRESH_BINARY)
+            
+            # Tebalkan area mask sedikit (2 iterasi) agar bayangan anti-aliasing di pinggir huruf ikut terhapus
             kernel = np.ones((3,3), np.uint8)
-            dilated_thresh = cv2.dilate(thresh, kernel, iterations=1)
+            dilated = cv2.dilate(thresh, kernel, iterations=2)
             
-            # Gabungkan cetakan huruf ini ke mask utama
-            mask[y1:y2, x1:x2] = cv2.bitwise_or(mask[y1:y2, x1:x2], dilated_thresh)
+            mask[y1:y2, x1:x2] = cv2.bitwise_or(mask[y1:y2, x1:x2], dilated)
             
-        # Eksekusi Inpainting HANYA pada jalur piksel huruf
-        # Gunakan INPAINT_NS (Navier-Stokes) yang biasanya lebih halus untuk gradasi
-        inpainted_bgr = cv2.inpaint(img_bgr, mask, inpaintRadius=3, flags=cv2.INPAINT_NS)
+        # Eksekusi Inpainting menggunakan mask yang sudah presisi
+        inpainted_bgr = cv2.inpaint(img_bgr, mask, inpaintRadius=4, flags=cv2.INPAINT_NS)
         
         inpainted_rgb = cv2.cvtColor(inpainted_bgr, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(inpainted_rgb)
@@ -143,7 +149,7 @@ class Typesetter:
                 cw = font.getbbox(line)[2] - font.getbbox(line)[0]
                 cx = (orig_bw - cw) // 2
                 
-                # PERBAIKAN STROKE SFX: Diubah jadi 8% (0.08) agar tidak nge-blok menutupi gambar
+                # Outline (stroke) SFX tetap 8% agar proporsional
                 stroke_w = max(2, int(font_size * 0.08)) if is_single_word else max(1, int(font_size * 0.05))
                 
                 txt_draw.text(
@@ -166,6 +172,7 @@ class Typesetter:
             pil_img.paste(txt_canvas, (paste_x, paste_y), txt_canvas)
                 
         return pil_img
+
 
 def download_image(url, save_path, chapter_url=""):
     headers = {
