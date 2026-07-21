@@ -64,7 +64,7 @@ class ImageProcessor:
 
 class Typesetter:
     @staticmethod
-    def apply_text(pil_img, text_blocks, font_path="arial.ttf"):
+    def apply_text(pil_img, text_blocks, font_path="arial.ttf", sfx_font_path="Dark Poestry.ttf"):
         # ==========================================
         # 1. FASE INPAINTING (Masking Teks via Canny Edge)
         # ==========================================
@@ -120,8 +120,17 @@ class Typesetter:
             font_size = int(block.get('orig_line_height', bh) * 0.9)
             font_size = max(10, min(max_font_limit, font_size)) 
             
+            # --- TAMBAHAN LOGIKA SFX ---
+            # Anggap teks sebagai SFX jika dia cuma 1 kata dan ukurannya di atas 50 piksel
+            is_sfx = is_single_word and font_size > 50
+            
+            # Gunakan Dark Poestry jika ini SFX, jika tidak kembali ke font dialog biasa
+            active_font_path = sfx_font_path if is_sfx and os.path.exists(sfx_font_path) else font_path
+            # ---------------------------
+            
             while font_size > 8:
-                font = ImageFont.truetype(font_path, font_size) if os.path.exists(font_path) else ImageFont.load_default()
+                # Ganti 'font_path' di bawah ini dengan 'active_font_path'
+                font = ImageFont.truetype(active_font_path, font_size) if os.path.exists(active_font_path) else ImageFont.load_default()
                 lines, current_line = [], []
                 
                 def get_tw(text):
