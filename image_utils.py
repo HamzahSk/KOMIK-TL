@@ -86,32 +86,35 @@ class Typesetter:
             roi_gray = gray[y1:y2, x1:x2]
             
             # --- KOMBINASI CANNY & ADAPTIVE THRESHOLDING ---
+            # --- KOMBINASI CANNY & ADAPTIVE THRESHOLDING ---
             # 1. Canny Edge untuk menangkap garis tajam pada huruf
             edges = cv2.Canny(roi_gray, 30, 120) 
             
-            # 2. Adaptive Thresholding untuk menangkap outline/shadow yang pudar
+            # 2. Kurangi sensitivitas threshold (ubah ke 21, 5) 
+            # agar tekstur rambut/screentone tidak ikut terhapus
             thresh = cv2.adaptiveThreshold(
                 roi_gray, 255, 
                 cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                cv2.THRESH_BINARY_INV, 21, 4
+                cv2.THRESH_BINARY_INV, 21, 5
             )
             
-            # 3. Gabungkan tangkapan Canny dan Threshold
             combined_mask = cv2.bitwise_or(edges, thresh)
             
-            # 4. Tutup rongga (Morphological Close) agar masking solid
-            kernel_close = np.ones((3,3), np.uint8)
-            closed = cv2.morphologyEx(combined_mask, cv2.MORPH_CLOSE, kernel_close)
+            # 3. Filter noise (tekstur background/rambut) dengan Morphological Opening
+            kernel_clean = np.ones((2,2), np.uint8)
+            cleaned_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_OPEN, kernel_clean)
             
-            # 5. Dilate sedikit untuk memastikan batas terluar outline ikut "tertelan"
+            # 4. Dilate secukupnya supaya outline huruf ikut terhapus
             kernel_dilate = np.ones((3,3), np.uint8)
-            dilated = cv2.dilate(closed, kernel_dilate, iterations=1)
+            dilated = cv2.dilate(cleaned_mask, kernel_dilate, iterations=1)
             
-            # Gambar hasil mask ke mask utama
+            # 5. LANGSUNG terapkan ke mask utama.
+            # (HAPUS fungsi drawContours di sini agar tidak mem-fill area menjadi kotak)
             mask[y1:y2, x1:x2] = cv2.bitwise_or(mask[y1:y2, x1:x2], dilated)
             
-        # Gunakan inpaintRadius = 5 agar percampuran warna lebih halus
-        inpainted_bgr = cv2.inpaint(img_bgr, mask, inpaintRadius=5, flags=cv2.INPAINT_TELEA)
+        # Gunakan inpaintRadius = 3 (turunkan dari 5) agar percampuran warna lebih presisi di area sempit
+        inpainted_bgr = cv2.inpaint(img_bgr, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+
         
         inpainted_rgb = cv2.cvtColor(inpainted_bgr, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(inpainted_rgb)
