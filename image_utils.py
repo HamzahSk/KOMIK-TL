@@ -23,21 +23,35 @@ class ImageProcessor:
 class Typesetter:
     @staticmethod
     def apply_text(pil_img, text_blocks, font_path="arial.ttf"):
-        # Layer putih untuk latar belakang teks agar tidak bertabrakan dengan gambar asli
-        overlay = Image.new('RGBA', pil_img.size, (0, 0, 0, 0))
-        draw_overlay = ImageDraw.Draw(overlay)
+        # ==========================================
+        # 1. FASE INPAINTING (Menghapus Teks Lama)
+        # ==========================================
+        # Konversi PIL Image ke format Array BGR milik OpenCV
+        img_np = np.array(pil_img.convert('RGB'))
+        img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+        
+        # Buat "Mask" hitam kosong seukuran gambar
+        mask = np.zeros(img_bgr.shape[:2], dtype=np.uint8)
         
         for block in text_blocks:
             box = block['box']
-            display_text = block.get('translated_text', block['text'])
+            # Perlebar kotak tebasan 3 piksel agar sisa-sisa garis tepi teks benar-benar hilang
+            x1, y1 = max(0, box[0] - 3), max(0, box[1] - 3)
+            x2, y2 = min(img_bgr.shape[1], box[2] + 3), min(img_bgr.shape[0], box[3] + 3)
             
-            # Jangan hapus background jika kata tunggal (biasanya SFX) atau jika kemiringannya ekstrem
-            angle = block.get('angle', 0.0)
-            if len(display_text.split()) > 1 and abs(angle) < 15:
-                draw_overlay.rounded_rectangle(box, radius=6, fill=(255, 255, 255, 240))
+            # Gambar kotak putih (255) di area mask yang ingin dihapus
+            cv2.rectangle(mask, (x1, y1), (x2, y2), 255, -1)
             
-        pil_img = Image.alpha_composite(pil_img.convert('RGBA'), overlay).convert('RGB')
+        # Eksekusi Inpainting (TELEA Algorithm: Cepat dan cukup bagus untuk gradasi)
+        inpainted_bgr = cv2.inpaint(img_bgr, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
         
+        # Kembalikan hasilnya ke PIL Image agar bisa ditulisi teks
+        inpainted_rgb = cv2.cvtColor(inpainted_bgr, cv2.COLOR_BGR2RGB)
+        pil_img = Image.fromarray(inpainted_rgb)
+
+        # ==========================================
+        # 2. FASE TYPESETTING (Menempel Teks Baru)
+        # ==========================================
         for block in text_blocks:
             box = block['box']
             bw, bh = box[2] - box[0], box[3] - box[1]
@@ -47,14 +61,9 @@ class Typesetter:
             words = display_text.upper().split()
             is_single_word = len(words) <= 1
             
-            max_font_limit = 100
-            if is_single_word:
-                aspect_ratio = bw / max(1, bh)
-                if aspect_ratio > 1.5:
-                    bw = int(bw * 0.6) 
-                    max_font_limit = min(40, int(bh * 0.7))
-            
-            font_size = int(block.get('orig_line_height', bh) * 0.8)
+            # PERBAIKAN SFX: Ukuran font dimaksimalkan untuk teks satu kata
+            max_font_limit = 150 
+            font_size = int(block.get('orig_line_height', bh) * 0.9)
             font_size = max(10, min(max_font_limit, font_size)) 
             
             while font_size > 8:
@@ -71,30 +80,24 @@ class Typesetter:
                     
                     # LOGIKA HYPHENATION (Pemenggalan Kata)
                     if word_width > bw * 0.95:
-                        # Kosongkan current_line kalau ada isinya
                         if current_line:
                             lines.append(' '.join(current_line))
                             current_line = []
                             
                         temp_word = word
                         while temp_word:
-                            # Cari berapa banyak huruf yang muat di lebar balon
                             for i in range(len(temp_word), 0, -1):
                                 suffix = "-" if i < len(temp_word) else ""
                                 part = temp_word[:i] + suffix
                                 
                                 if get_tw(part) <= bw * 0.95 or i == 1:
                                     if i == len(temp_word):
-                                        # Potongan terakhir, jadikan awalan buat kata selanjutnya
                                         current_line = [part]
                                     else:
-                                        # Potongan dipenggal dengan "-", langsung masuk baris baru
                                         lines.append(part)
-                                    
                                     temp_word = temp_word[i:]
                                     break
                     else:
-                        # LOGIKA NORMAL (Jika kata tidak kepanjangan)
                         test_line = ' '.join(current_line + [word]) if current_line else word
                         if get_tw(test_line) <= bw * 0.95:
                             current_line.append(word)
@@ -109,15 +112,12 @@ class Typesetter:
                 line_height = font.getbbox("A")[3] - font.getbbox("A")[1] + int(font_size * 0.45)
                 total_height = len(lines) * line_height
                 
-                # Cek apakah setelah ditambahkan baris baru, tingginya masih muat di balon
                 if total_height <= bh * 0.95:
                     break
                 font_size -= 1
 
             orig_bw = box[2] - box[0]
             
-            # --- MULAI PROSES ROTASI ---
-            # 1. Buat kanvas kecil transparan untuk teks
             txt_canvas = Image.new('RGBA', (orig_bw, bh), (0, 0, 0, 0))
             txt_draw = ImageDraw.Draw(txt_canvas)
             
@@ -129,7 +129,6 @@ class Typesetter:
                 
                 stroke_w = max(2, int(font_size * 0.25)) if is_single_word else max(1, int(font_size * 0.05))
                 
-                # 2. Gambar teks di kanvas kecil
                 txt_draw.text(
                     (cx, current_y), 
                     line, 
@@ -140,22 +139,17 @@ class Typesetter:
                 )
                 current_y += line_height
             
-            # 3. Cek sudut kemiringan
+            # Logika Kemiringan Teks
             angle = block.get('angle', 0.0)
-            if abs(angle) > 3: # Putar jika kemiringan lebih dari 3 derajat
-                # Pillow memutar berlawanan jarum jam, jadi kita gunakan -angle
+            if abs(angle) > 3: 
                 txt_canvas = txt_canvas.rotate(-angle, expand=True, resample=Image.BICUBIC)
             
-            # 4. Kalkulasi ulang titik tengah agar pas saat ditempel ke gambar utama
             paste_x = box[0] + (orig_bw - txt_canvas.width) // 2
             paste_y = box[1] + (bh - txt_canvas.height) // 2
             
-            # 5. Tempel teks yang sudah (atau tidak) diputar ke gambar utama
             pil_img.paste(txt_canvas, (paste_x, paste_y), txt_canvas)
-            # ---------------------------
                 
         return pil_img
-
 
 def download_image(url, save_path, chapter_url=""):
     headers = {
