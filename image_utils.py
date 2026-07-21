@@ -66,7 +66,7 @@ class Typesetter:
     @staticmethod
     def apply_text(pil_img, text_blocks, font_path="arial.ttf"):
         # ==========================================
-        # 1. FASE INPAINTING (Masking Teks Presisi)
+        # 1. FASE INPAINTING (Masking Teks via Canny Edge)
         # ==========================================
         img_np = np.array(pil_img.convert('RGB'))
         img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
@@ -76,7 +76,7 @@ class Typesetter:
         
         for block in text_blocks:
             box = block['box']
-            # Padding diperkecil agar tidak mengambil terlalu banyak area luar (background)
+            # PERBAIKAN 1: Perkecil padding agar tidak menangkap garis di luar teks (misal: rambut)
             pad = 2 
             x1, y1 = max(0, int(box[0]) - pad), max(0, int(box[1]) - pad)
             x2, y2 = min(img_bgr.shape[1], int(box[2]) + pad), min(img_bgr.shape[0], int(box[3]) + pad)
@@ -85,35 +85,31 @@ class Typesetter:
             
             roi_gray = gray[y1:y2, x1:x2]
             
-            # Ambil deteksi warna teks dari K-Means
-            text_color = block.get('colors', [(0,0,0)])[0]
-            # Hitung rata-rata kecerahan (RGB)
-            brightness = sum(text_color) / 3.0 
+            # 1. Cari garis tegas (huruf)
+            edges = cv2.Canny(roi_gray, 50, 150)
             
-            # Adaptive Thresholding (Otsu): Pisahkan teks dari background secara otomatis
-            if brightness > 127:
-                # Jika teksnya terang (putih/kuning), background pasti lebih gelap
-                _, mask_roi = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            else:
-                # Jika teksnya gelap (hitam/bubble dialog), background pasti lebih terang
-                _, mask_roi = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-                
-            # Bersihkan 'noise' atau titik-titik kecil yang bukan teks
-            kernel_noise = np.ones((2,2), np.uint8)
-            mask_roi = cv2.morphologyEx(mask_roi, cv2.MORPH_OPEN, kernel_noise)
+            # PERBAIKAN 2: Perkecil ukuran kernel (3x3) dan cukup 1 iterasi agar masker tidak meluber
+            kernel = np.ones((3,3), np.uint8)
+            dilated = cv2.dilate(edges, kernel, iterations=1)
             
-            # Tebalkan sedikit saja (dilate) hanya untuk menutupi sisa outline huruf
-            kernel_dilate = np.ones((3,3), np.uint8)
-            mask_roi = cv2.dilate(mask_roi, kernel_dilate, iterations=1)
+            # 3. Isi lubang di dalam huruf
+            contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             
-            mask[y1:y2, x1:x2] = cv2.bitwise_or(mask[y1:y2, x1:x2], mask_roi)
+            # PERBAIKAN 3: Cegah program mengisi area yang terlalu besar (menyelamatkan background)
+            box_area = (x2 - x1) * (y2 - y1)
+            for cnt in contours:
+                if cv2.contourArea(cnt) < box_area * 0.7: 
+                    cv2.drawContours(dilated, [cnt], -1, 255, -1)
             
-        # Eksekusi Inpainting (Gunakan TELEA karena seringkali lebih rapi untuk gradasi warna komik)
+            # Tempelkan bentuk persis hurufnya ke mask utama
+            mask[y1:y2, x1:x2] = cv2.bitwise_or(mask[y1:y2, x1:x2], dilated)
+            
+        # PERBAIKAN 4: Kurangi radius inpaint menjadi 2 atau 3, dan gunakan INPAINT_TELEA (lebih rapi untuk gambar)
         inpainted_bgr = cv2.inpaint(img_bgr, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
         
         inpainted_rgb = cv2.cvtColor(inpainted_bgr, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(inpainted_rgb)
-
+        
         # ==========================================
         # 2. FASE TYPESETTING (Menempel Teks Baru)
         # ==========================================
@@ -211,7 +207,6 @@ class Typesetter:
             pil_img.paste(txt_canvas, (paste_x, paste_y), txt_canvas)
                 
         return pil_img
-
 
 def download_image(url, save_path, chapter_url=""):
     headers = {
