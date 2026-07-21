@@ -1,14 +1,18 @@
 import os
-import re
+import requests
+import concurrent.futures
 import numpy as np
 import cv2
+import re # Tambahkan untuk membersihkan teks
+
 from PIL import Image, ImageDraw, ImageFont
 
 class ImageProcessor:
     @staticmethod
     def detect_colors(pil_img, box):
-        # Tambahkan padding ke dalam (shrink) agar K-means 
-        # tidak menangkap terlalu banyak background/garis panel
+        # 1. Crop gambar sesuai bounding box
+        # Kita tambahkan sedikit padding ke dalam (shrink) agar K-means 
+        # tidak terlalu banyak menangkap background luar/garis panel
         pad = 2
         crop = pil_img.crop((
             max(0, int(box[0]) + pad), 
@@ -63,7 +67,7 @@ class Typesetter:
     @staticmethod
     def apply_text(pil_img, text_blocks, font_path="arial.ttf"):
         # ==========================================
-        # 1. FASE INPAINTING (Masking Teks & Outline)
+        # 1. FASE INPAINTING (Masking Teks via Canny Edge)
         # ==========================================
         img_np = np.array(pil_img.convert('RGB'))
         img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
@@ -73,7 +77,7 @@ class Typesetter:
         
         for block in text_blocks:
             box = block['box']
-            pad = 3 # Padding aman untuk cover shadow/outline
+            pad = 2 # Kurangi padding agar tidak merusak background sekitar
             x1, y1 = max(0, int(box[0]) - pad), max(0, int(box[1]) - pad)
             x2, y2 = min(img_bgr.shape[1], int(box[2]) + pad), min(img_bgr.shape[0], int(box[3]) + pad)
             
@@ -81,36 +85,21 @@ class Typesetter:
             
             roi_gray = gray[y1:y2, x1:x2]
             
-            # --- KOMBINASI CANNY & ADAPTIVE THRESHOLDING ---
-            # 1. Canny Edge untuk menangkap garis tajam pada huruf
-            edges = cv2.Canny(roi_gray, 30, 120) 
+            # Gunakan threshold Canny yang lebih spesifik
+            edges = cv2.Canny(roi_gray, 100, 200)
             
-            # 2. Adaptive Thresholding untuk menangkap outline/shadow yang pudar
-            thresh = cv2.adaptiveThreshold(
-                roi_gray, 255, 
-                cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
-                cv2.THRESH_BINARY_INV, 11, 2
-            )
+            # PERBAIKAN: Kurangi agresivitas kernel. (3,3) dan iterasi 1 sudah cukup.
+            # Ini mencegah masking meluber ke rambut/petir di background.
+            kernel = np.ones((3,3), np.uint8)
+            dilated = cv2.dilate(edges, kernel, iterations=1)
             
-            # 3. Gabungkan tangkapan Canny dan Threshold
-            combined_mask = cv2.bitwise_or(edges, thresh)
-            
-            # 4. Tutup rongga (Morphological Close) agar masking solid
-            kernel_close = np.ones((3,3), np.uint8)
-            closed = cv2.morphologyEx(combined_mask, cv2.MORPH_CLOSE, kernel_close)
-            
-            # 5. Dilate sedikit untuk memastikan batas terluar outline ikut "tertelan"
-            kernel_dilate = np.ones((3,3), np.uint8)
-            dilated = cv2.dilate(closed, kernel_dilate, iterations=1)
-            
-            # Gambar hasil mask ke mask utama
             contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             cv2.drawContours(dilated, contours, -1, 255, -1)
             
             mask[y1:y2, x1:x2] = cv2.bitwise_or(mask[y1:y2, x1:x2], dilated)
             
-        # Gunakan inpaintRadius = 5 agar percampuran warna lebih halus
-        inpainted_bgr = cv2.inpaint(img_bgr, mask, inpaintRadius=5, flags=cv2.INPAINT_TELEA)
+        # Gunakan inpaintRadius yang lebih kecil agar smudge/bercak lebih minim
+        inpainted_bgr = cv2.inpaint(img_bgr, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
         
         inpainted_rgb = cv2.cvtColor(inpainted_bgr, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(inpainted_rgb)
@@ -132,7 +121,7 @@ class Typesetter:
             is_single_word = len(words) <= 1
             
             max_font_limit = 120 
-            font_size = int(block.get('orig_line_height', bh) * 0.85) 
+            font_size = int(block.get('orig_line_height', bh) * 0.85) # Kurangi sedikit agar ada ruang nafas
             font_size = max(10, min(max_font_limit, font_size)) 
             
             while font_size > 8:
@@ -176,6 +165,7 @@ class Typesetter:
                 if current_line: 
                     lines.append(' '.join(current_line))
                 
+                # Kalkulasi tinggi baris yang lebih aman untuk berbagai font
                 bbox = font.getbbox("Ay")
                 line_height = (bbox[3] - bbox[1]) + int(font_size * 0.2)
                 total_height = len(lines) * line_height
@@ -190,17 +180,17 @@ class Typesetter:
             
             current_y = (bh - total_height) // 2
             
-            # Kalkulasi Stroke yang proporsional 
+            # PERBAIKAN: Kalkulasi Stroke yang lebih proporsional agar tidak menabrak dan tajam
             stroke_w = 2 if is_single_word else max(1, int(font_size * 0.03))
-            if font_size < 14: stroke_w = 0 
+            if font_size < 14: stroke_w = 0 # Matikan stroke jika font terlalu kecil
             
             for line in lines:
                 cw = font.getbbox(line)[2] - font.getbbox(line)[0]
                 cx = (orig_bw - cw) // 2
                 
-                # Cek ketersediaan colors sebelum dipanggil (mencegah error jika dictionary tidak lengkap)
-                fill_color = block['colors'][0] if 'colors' in block else (0,0,0)
-                stroke_color = block['colors'][1] if 'colors' in block else (255,255,255)
+                # Gunakan warna yang didapat dari K-Means
+                fill_color = block['colors'][0]
+                stroke_color = block['colors'][1]
                 
                 txt_draw.text(
                     (cx, current_y), 
@@ -222,7 +212,6 @@ class Typesetter:
             pil_img.paste(txt_canvas, (paste_x, paste_y), txt_canvas)
                 
         return pil_img
-
 
 def download_image(url, save_path, chapter_url=""):
     headers = {
