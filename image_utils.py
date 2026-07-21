@@ -85,40 +85,40 @@ class Typesetter:
             
             roi_gray = gray[y1:y2, x1:x2]
             
-            # --- PERBAIKAN: MASKING SESUAI BENTUK HURUF ---
-            
-            # 1. Deteksi Tepi (Canny) - Aman untuk latar gelap maupun terang
+            # --- KOMBINASI CANNY & ADAPTIVE THRESHOLDING ---
+            # 1. Canny Edge untuk menangkap garis tajam pada huruf
             edges = cv2.Canny(roi_gray, 30, 120) 
             
-            # 2. Tutup celah pada garis tepi (Morphological Close)
+            # 2. Adaptive Thresholding untuk menangkap outline/shadow yang pudar
+            thresh = cv2.adaptiveThreshold(
+                roi_gray, 255, 
+                cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                cv2.THRESH_BINARY_INV, 21, 4
+            )
+            
+            # 3. Gabungkan tangkapan Canny dan Threshold
+            combined_mask = cv2.bitwise_or(edges, thresh)
+            
+            # 4. Tutup rongga (Morphological Close) agar masking solid
             kernel_close = np.ones((3,3), np.uint8)
-            closed = cv2.morphologyEx(edges, cv2.MORPH_CLOSE, kernel_close)
+            closed = cv2.morphologyEx(combined_mask, cv2.MORPH_CLOSE, kernel_close)
             
-            # 3. Cari kontur (pinggiran) huruf dan ISI bagian dalamnya
-            contours, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            roi_mask = np.zeros_like(roi_gray)
-            cv2.drawContours(roi_mask, contours, -1, 255, -1) # Angka -1 terakhir artinya "Fill"
-            
-            # 4. Gabungkan garis luar dan isinya
-            combined_mask = cv2.bitwise_or(closed, roi_mask)
-            
-            # 5. Pertebal tipis (Dilate) untuk menelan sisa outline/bayangan asli
+            # 5. Dilate sedikit untuk memastikan batas terluar outline ikut "tertelan"
             kernel_dilate = np.ones((3,3), np.uint8)
-            final_roi_mask = cv2.dilate(combined_mask, kernel_dilate, iterations=1)
+            dilated = cv2.dilate(closed, kernel_dilate, iterations=1)
             
-            # Masukkan bentuk huruf yang sudah akurat ke mask utama
-            mask[y1:y2, x1:x2] = cv2.bitwise_or(mask[y1:y2, x1:x2], final_roi_mask)
+            # Gambar hasil mask ke mask utama
+            mask[y1:y2, x1:x2] = cv2.bitwise_or(mask[y1:y2, x1:x2], dilated)
             
-        # Gunakan inpaintRadius = 4 agar tidak terlalu lumer
-        inpainted_bgr = cv2.inpaint(img_bgr, mask, inpaintRadius=4, flags=cv2.INPAINT_TELEA)
+        # Gunakan inpaintRadius = 5 agar percampuran warna lebih halus
+        inpainted_bgr = cv2.inpaint(img_bgr, mask, inpaintRadius=5, flags=cv2.INPAINT_TELEA)
         
         inpainted_rgb = cv2.cvtColor(inpainted_bgr, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(inpainted_rgb)
 
         # ==========================================
         # 2. FASE TYPESETTING (Menempel Teks Baru)
-        # (Lanjutkan dengan sisa kodemu yang bawahnya...)
-
+        # ==========================================
         for block in text_blocks:
             box = block['box']
             bw, bh = box[2] - box[0], box[3] - box[1]
