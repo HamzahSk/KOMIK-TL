@@ -128,14 +128,6 @@ class Typesetter:
             active_font_path = sfx_font_path if is_sfx and os.path.exists(sfx_font_path) else font_path
             # ---------------------------
             
-            # --- TAMBAHAN LOGIKA SFX ---
-            # Anggap teks sebagai SFX jika dia cuma 1 kata dan ukurannya di atas 50 piksel
-            is_sfx = is_single_word and font_size > 50
-            
-            # Gunakan Dark Poestry jika ini SFX, jika tidak kembali ke font dialog biasa
-            active_font_path = sfx_font_path if is_sfx and os.path.exists(sfx_font_path) else font_path
-            # ---------------------------
-            
             while font_size > 8:
                 font = ImageFont.truetype(active_font_path, font_size) if os.path.exists(active_font_path) else ImageFont.load_default()
                 lines, current_line = [], []
@@ -146,12 +138,16 @@ class Typesetter:
                 
                 # --- PERBAIKAN LOGIKA SFX (1 KATA) ---
                 if is_single_word:
-                    word_width = get_tw(words[0])
-                    # Hitung tinggi baris
-                    line_height = font.getbbox("A")[3] - font.getbbox("A")[1] + int(font_size * 0.45)
+                    # Prediksi ketebalan stroke
+                    stroke_w = max(2, int(font_size * 0.08))
                     
-                    # Syarat ketat: Lebar DAN Tinggi harus muat di dalam kotak (dikurangi margin 5%)
-                    if word_width <= bw * 0.95 and line_height <= bh * 0.95:
+                    # Tambahkan stroke ke perhitungan lebar dan tinggi
+                    word_width = get_tw(words[0]) + (stroke_w * 2) 
+                    line_height = font.getbbox("A")[3] - font.getbbox("A")[1] + int(font_size * 0.45)
+                    total_needed_h = line_height + (stroke_w * 2)
+                    
+                    # Syarat ketat: Total ukuran (termasuk stroke) tidak boleh melebihi kotak aslinya
+                    if word_width <= bw and total_needed_h <= bh:
                         lines = [words[0]]
                         total_height = line_height
                         break  # Sudah muat, keluar dari loop
@@ -204,15 +200,21 @@ class Typesetter:
 
             orig_bw = box[2] - box[0]
 
+            # --- PERBAIKAN KANVAS ---
+            # Beri padding (margin ekstra) agar pinggiran huruf & stroke punya ruang luang
+            pad_canvas = max(15, int(font_size * 0.3))
+            canvas_w = orig_bw + (pad_canvas * 2)
+            canvas_h = bh + (pad_canvas * 2)
             
-            txt_canvas = Image.new('RGBA', (orig_bw, bh), (0, 0, 0, 0))
+            txt_canvas = Image.new('RGBA', (canvas_w, canvas_h), (0, 0, 0, 0))
             txt_draw = ImageDraw.Draw(txt_canvas)
             
-            current_y = (bh - total_height) // 2
+            # Hitung titik awal Y agar posisinya tetap di tengah
+            current_y = (canvas_h - total_height) // 2
             
             for line in lines:
                 cw = font.getbbox(line)[2] - font.getbbox(line)[0]
-                cx = (orig_bw - cw) // 2
+                cx = (canvas_w - cw) // 2
                 
                 stroke_w = max(2, int(font_size * 0.08)) if is_single_word else max(1, int(font_size * 0.05))
                 
@@ -230,10 +232,12 @@ class Typesetter:
             if abs(angle) > 3: 
                 txt_canvas = txt_canvas.rotate(-angle, expand=True, resample=Image.BICUBIC)
             
+            # Sesuaikan perhitungan koordinat paste karena ukuran kanvas sekarang lebih besar
             paste_x = box[0] + (orig_bw - txt_canvas.width) // 2
             paste_y = box[1] + (bh - txt_canvas.height) // 2
             
             pil_img.paste(txt_canvas, (paste_x, paste_y), txt_canvas)
+            # ------------------------
                 
         return pil_img
 

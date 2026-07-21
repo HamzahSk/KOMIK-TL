@@ -69,8 +69,7 @@ class OCREngine:
     def _merge_dialog_bubbles(self, lines):
         if not lines: return []
         
-        # 1. Urutkan berdasarkan titik tengah vertikal (Center Y)
-        # Ini penting agar teks miring tetap berurutan dengan benar meski kotaknya bertabrakan
+        # Urutkan berdasarkan Y Tengah agar stabil untuk teks miring
         lines.sort(key=lambda item: (item['box'][1] + item['box'][3]) / 2)
         
         merged, visited = [], set()
@@ -85,23 +84,34 @@ class OCREngine:
                 if j in visited: continue
                 next_box = lines[j]['box']
                 prev_box = group_boxes[-1] 
-                min_h = min(prev_box[3] - prev_box[1], next_box[3] - next_box[1])
                 
-                # 2. Toleransi overlap (negatif) dibesarkan drastis untuk kasus teks miring di layar HP.
-                # Toleransi jarak (positif) dijaga tetap ketat agar teks beda balon tidak menyatu.
-                is_vertically_close = (-min_h * 2.5) <= (next_box[1] - prev_box[3]) <= max(8, min_h * 0.8)
+                prev_h = prev_box[3] - prev_box[1]
+                next_h = next_box[3] - next_box[1]
+                min_h = min(prev_h, next_h)
+                max_h = max(prev_h, next_h)
                 
-                # 3. Keselarasan horizontal menggunakan Center X agar lebih fleksibel
+                # 1. KEMBALIKAN ATURAN HORIZONTAL ASLI YANG KETAT
+                # Memaksa teks harus bertumpuk/overlap secara horizontal (tidak bersebelahan)
+                is_horizontally_overlapping = (min(prev_box[2], next_box[2]) - max(prev_box[0], next_box[0])) > -5
                 prev_cx = (prev_box[0] + prev_box[2]) / 2
                 next_cx = (next_box[0] + next_box[2]) / 2
                 max_w = max(prev_box[2] - prev_box[0], next_box[2] - next_box[0])
+                is_center_aligned = abs(prev_cx - next_cx) < (max_w * 0.6)
                 
-                is_horizontally_aligned = abs(prev_cx - next_cx) < (max_w * 0.75)
+                is_horizontally_aligned = is_horizontally_overlapping and is_center_aligned
                 
-                # 4. Syarat keamanan ekstra: Sudut kemiringan harus mirip (toleransi 10 derajat).
-                is_angle_similar = abs(lines[j]['angle'] - group_angles[-1]) < 10
+                # 2. ATURAN VERTIKAL
+                # Toleransi ke bawah (gap) dibuat ketat, toleransi ke atas (overlap) dilonggarkan untuk teks miring
+                is_vertically_close = (-min_h * 2.0) <= (next_box[1] - prev_box[3]) <= max(10, min_h * 0.8)
                 
-                if is_vertically_close and is_horizontally_aligned and is_angle_similar:
+                # 3. ATURAN TINGGI BOX (HEIGHT RATIO)
+                # Dilonggarkan ke 3.0 karena box teks miring tingginya sangat fluktuatif dibanding teks lurus
+                is_height_similar = (max_h / max(1, min_h)) < 3.0
+                
+                # 4. KEMIRINGAN
+                is_angle_similar = abs(lines[j]['angle'] - group_angles[-1]) < 12
+                
+                if is_horizontally_aligned and is_vertically_close and is_height_similar and is_angle_similar:
                     combined_text.append(lines[j]['text'])
                     group_boxes.append(next_box)
                     group_angles.append(lines[j]['angle'])
