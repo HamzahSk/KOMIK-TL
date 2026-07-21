@@ -99,7 +99,7 @@ def main():
         print("Merapikan potongan panel gambar (Smart Slicing)...")
         final_paths = []
         for m_path in merged_paths:
-            slices = smart_slice_image(m_path, target_height=2000, out_dir=out_dir)
+            slices = smart_slice_image(m_path, target_height=1200, out_dir=out_dir)
             final_paths.extend(slices)
             
             if len(slices) > 1 and os.path.exists(m_path):

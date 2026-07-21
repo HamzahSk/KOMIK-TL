@@ -23,6 +23,7 @@ class ImageProcessor:
 class Typesetter:
     @staticmethod
     def apply_text(pil_img, text_blocks, font_path="arial.ttf"):
+        # Layer putih untuk latar belakang teks agar tidak bertabrakan dengan gambar asli
         overlay = Image.new('RGBA', pil_img.size, (0, 0, 0, 0))
         draw_overlay = ImageDraw.Draw(overlay)
         
@@ -30,11 +31,12 @@ class Typesetter:
             box = block['box']
             display_text = block.get('translated_text', block['text'])
             
-            if len(display_text.split()) > 1:
+            # Jangan hapus background jika kata tunggal (biasanya SFX) atau jika kemiringannya ekstrem
+            angle = block.get('angle', 0.0)
+            if len(display_text.split()) > 1 and abs(angle) < 15:
                 draw_overlay.rounded_rectangle(box, radius=6, fill=(255, 255, 255, 240))
             
         pil_img = Image.alpha_composite(pil_img.convert('RGBA'), overlay).convert('RGB')
-        draw = ImageDraw.Draw(pil_img)
         
         for block in text_blocks:
             box = block['box']
@@ -45,17 +47,12 @@ class Typesetter:
             words = display_text.upper().split()
             is_single_word = len(words) <= 1
             
-            # --- OPTIMASI KHUSUS UNTUK SFX / TEKS MIRING ---
             max_font_limit = 100
             if is_single_word:
                 aspect_ratio = bw / max(1, bh)
-                # Jika kotak terlalu lebar (khas SFX miring/memanjang), persempit area cetak (mepetkan)
                 if aspect_ratio > 1.5:
-                    # Kurangi lebar target pencocokan teks agar font dipaksa mengecil
                     bw = int(bw * 0.6) 
-                    # Batasi font agar tidak menjadi raksasa menutupi layar
                     max_font_limit = min(40, int(bh * 0.7))
-            # -----------------------------------------------
             
             font_size = int(block.get('orig_line_height', bh) * 0.8)
             font_size = max(10, min(max_font_limit, font_size)) 
@@ -66,7 +63,7 @@ class Typesetter:
                 
                 for word in words:
                     test_line = ' '.join(current_line + [word]) if current_line else word
-                    test_bbox = draw.textbbox((0, 0), test_line, font=font)
+                    test_bbox = font.getbbox(test_line)
                     if (test_bbox[2] - test_bbox[0]) <= bw * 0.95:
                         current_line.append(word)
                     else:
@@ -82,22 +79,23 @@ class Typesetter:
                     break
                 font_size -= 1
 
-            current_y = box[1] + (bh - total_height) // 2
-            
-            # Hitung ulang bw asli untuk penempatan posisi horizontal di tengah box semula
             orig_bw = box[2] - box[0]
             
+            # --- MULAI PROSES ROTASI ---
+            # 1. Buat kanvas kecil transparan untuk teks
+            txt_canvas = Image.new('RGBA', (orig_bw, bh), (0, 0, 0, 0))
+            txt_draw = ImageDraw.Draw(txt_canvas)
+            
+            current_y = (bh - total_height) // 2
+            
             for line in lines:
-                cw = draw.textbbox((0, 0), line, font=font)[2] - draw.textbbox((0, 0), line, font=font)[0]
-                # Posisikan tetap di tengah-tengah bounding box asli
-                cx = box[0] + (orig_bw - cw) // 2
+                cw = font.getbbox(line)[2] - font.getbbox(line)[0]
+                cx = (orig_bw - cw) // 2
                 
-                if is_single_word:
-                    stroke_w = max(2, int(font_size * 0.25))
-                else:
-                    stroke_w = max(1, int(font_size * 0.05))
+                stroke_w = max(2, int(font_size * 0.25)) if is_single_word else max(1, int(font_size * 0.05))
                 
-                draw.text(
+                # 2. Gambar teks di kanvas kecil
+                txt_draw.text(
                     (cx, current_y), 
                     line, 
                     font=font, 
@@ -105,10 +103,24 @@ class Typesetter:
                     stroke_width=stroke_w, 
                     stroke_fill=block['colors'][1]
                 )
-                
                 current_y += line_height
+            
+            # 3. Cek sudut kemiringan
+            angle = block.get('angle', 0.0)
+            if abs(angle) > 3: # Putar jika kemiringan lebih dari 3 derajat
+                # Pillow memutar berlawanan jarum jam, jadi kita gunakan -angle
+                txt_canvas = txt_canvas.rotate(-angle, expand=True, resample=Image.BICUBIC)
+            
+            # 4. Kalkulasi ulang titik tengah agar pas saat ditempel ke gambar utama
+            paste_x = box[0] + (orig_bw - txt_canvas.width) // 2
+            paste_y = box[1] + (bh - txt_canvas.height) // 2
+            
+            # 5. Tempel teks yang sudah (atau tidak) diputar ke gambar utama
+            pil_img.paste(txt_canvas, (paste_x, paste_y), txt_canvas)
+            # ---------------------------
                 
         return pil_img
+
 
 def download_image(url, save_path, chapter_url=""):
     headers = {
@@ -236,12 +248,16 @@ def merge_short_images(raw_paths, target_height=2200, max_workers=6):
         
     return merged_paths
 
-def smart_slice_image(image_path, target_height=2000, out_dir="output"):
+def smart_slice_image(image_path, target_height=1200, out_dir="output"):
     """
-    Memotong gambar memanjang secara cerdas tanpa memotong teks/gambar penting.
-    Mencari celah (ruang kosong) di antara panel komik.
+    Memotong gambar dengan Edge Detection.
+    Mampu mengenali background berpola/screentone dengan mencari
+    area yang minim garis tegas (minim teks/border panel).
     """
-    # Baca gambar pakai OpenCV
+    import cv2
+    import numpy as np
+    import os
+
     img = cv2.imread(image_path)
     if img is None:
         print(f"[Error] Tidak bisa membaca gambar {image_path}")
@@ -249,17 +265,26 @@ def smart_slice_image(image_path, target_height=2000, out_dir="output"):
 
     height, width = img.shape[:2]
     
-    # Kalau gambar masih pendek dari target, tidak usah dipotong
     if height <= target_height:
         return [image_path]
 
-    # Ubah ke grayscale untuk mempermudah deteksi baris kosong
+    # 1. Ubah ke Grayscale
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     
-    # Hitung standar deviasi (variansi warna) per baris piksel
-    # Kalau nilainya kecil banget (< 5.0), berarti baris itu warnanya solid (putih/hitam polos) -> AMAN dipotong
-    row_std = np.std(gray, axis=1)
-    safe_rows = row_std < 5.0 
+    # 2. Blur yang cukup kuat untuk menghancurkan pola background/screentone tipis
+    blurred = cv2.GaussianBlur(gray, (15, 15), 0)
+    
+    # 3. Deteksi Tepi (Canny) - hanya menangkap garis-garis yang sangat kontras
+    edges = cv2.Canny(blurred, 30, 100)
+    
+    # 4. Hitung kepadatan garis tepi per baris (edges bernilai 255 untuk garis)
+    # Kita bagi 255 agar nilainya jadi jumlah piksel (0, 1, 2, dst)
+    row_edge_count = np.sum(edges, axis=1) / 255.0
+    
+    # 5. Baris aman adalah baris yang jumlah piksel garisnya sangat sedikit
+    # Toleransi: maksimal 2% dari lebar gambar boleh ada garis (mengabaikan noise/sisa background)
+    tolerance = width * 0.02
+    safe_rows = row_edge_count <= tolerance
     
     sliced_paths = []
     y_start = 0
@@ -272,35 +297,37 @@ def smart_slice_image(image_path, target_height=2000, out_dir="output"):
         y_end = y_start + target_height
         
         if y_end >= height:
-            y_end = height # Potongan terakhir sampai ujung bawah
+            y_end = height
         else:
-            # Cari baris aman terdekat dari titik potong (y_end) naik ke atas
-            # Kita mundur maksimal setengah dari target_height biar potongannya nggak kekecilan
-            search_limit = max(y_start + (target_height // 2), 0)
+            search_limit_up = max(y_start + int(target_height * 0.3), 0)
+            search_limit_down = min(y_start + int(target_height * 1.5), height)
             
             found_safe_cut = False
-            for y_candidate in range(y_end, search_limit, -1):
-                if safe_rows[y_candidate]:
-                    # Ketemu baris kosong! Kita potong di sini
-                    y_end = y_candidate
+            
+            # Cari celah aman ke ATAS (butuh gap 15 piksel)
+            for y_candidate in range(y_end, search_limit_up, -1):
+                if y_candidate - 15 > 0 and np.all(safe_rows[y_candidate-15 : y_candidate]):
+                    y_end = y_candidate - 7
                     found_safe_cut = True
                     break
             
-            # Kalau komiknya terlalu padat dan nggak ada ruang kosong sama sekali
+            # Coba cari ke BAWAH kalau di atas terlalu padat teks/panel
             if not found_safe_cut:
-                print(f"[Warning] Gagal mencari ruang kosong untuk {base_name}. Potong paksa.")
+                for y_candidate in range(y_end, search_limit_down):
+                    if y_candidate + 15 < height and np.all(safe_rows[y_candidate : y_candidate+15]):
+                        y_end = y_candidate + 7
+                        found_safe_cut = True
+                        break
+            
+            if not found_safe_cut:
+                print(f"[Warning] Area terlalu padat di {base_name}. Potong paksa di Y:{y_end}.")
         
-        # Eksekusi potong gambar dari y_start sampai y_end
         slice_img = img[y_start:y_end, :]
-        
-        # Simpan hasil potongan
         slice_path = os.path.join(out_dir, f"{base_name}_part{part}.jpg")
         cv2.imwrite(slice_path, slice_img)
         sliced_paths.append(slice_path)
         
-        # Geser titik awal untuk potongan berikutnya
         y_start = y_end
         part += 1
         
     return sliced_paths
-    
