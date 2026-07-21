@@ -24,7 +24,7 @@ class Typesetter:
     @staticmethod
     def apply_text(pil_img, text_blocks, font_path="arial.ttf"):
         # ==========================================
-        # 1. FASE INPAINTING (Masking Teks Super Presisi)
+        # 1. FASE INPAINTING (Masking Teks via Canny Edge)
         # ==========================================
         img_np = np.array(pil_img.convert('RGB'))
         img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
@@ -34,41 +34,29 @@ class Typesetter:
         
         for block in text_blocks:
             box = block['box']
-            # Lebarkan kotak 4 piksel agar kita benar-benar menyentuh area background murni di pinggirnya
-            pad = 4
+            pad = 5
             x1, y1 = max(0, int(box[0]) - pad), max(0, int(box[1]) - pad)
             x2, y2 = min(img_bgr.shape[1], int(box[2]) + pad), min(img_bgr.shape[0], int(box[3]) + pad)
             
-            if x2 - x1 < 10 or y2 - y1 < 10: continue
+            if x2 - x1 < 5 or y2 - y1 < 5: continue
             
             roi_gray = gray[y1:y2, x1:x2]
             
-            # Trik Cerdas: Ambil sampel warna dari 4 sisi pinggiran luar kotak
-            top = roi_gray[0, :]
-            bottom = roi_gray[-1, :]
-            left = roi_gray[1:-1, 0]
-            right = roi_gray[1:-1, -1]
-            perimeter = np.concatenate([top, bottom, left, right])
+            # 1. Cari garis tegas (huruf). Gradasi halus otomatis diabaikan!
+            edges = cv2.Canny(roi_gray, 50, 150)
             
-            # Gunakan nilai tengah (median) dari pinggiran sebagai "Warna Background Asli"
-            bg_median = np.median(perimeter)
+            # 2. Tebalkan garis tersebut agar outline (stroke) putih khas komik ikut tertutup
+            kernel = np.ones((5,5), np.uint8)
+            dilated = cv2.dilate(edges, kernel, iterations=2)
             
-            # Buat gambar bayangan berisi warna background tersebut
-            bg_img = np.full(roi_gray.shape, bg_median, dtype=np.uint8)
+            # 3. Isi lubang di dalam huruf (seperti bagian dalam huruf O, A, P, dll)
+            contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            cv2.drawContours(dilated, contours, -1, 255, -1)
             
-            # Cari selisih warna: Piksel yang warnanya beda jauh dari background = Teks
-            diff = cv2.absdiff(roi_gray, bg_img)
-            
-            # Jika beda warnanya lebih dari 25, anggap itu teks (jadikan area putih di dalam mask)
-            _, thresh = cv2.threshold(diff, 25, 255, cv2.THRESH_BINARY)
-            
-            # Tebalkan area mask sedikit (2 iterasi) agar bayangan anti-aliasing di pinggir huruf ikut terhapus
-            kernel = np.ones((3,3), np.uint8)
-            dilated = cv2.dilate(thresh, kernel, iterations=2)
-            
+            # Tempelkan bentuk persis hurufnya ke mask utama
             mask[y1:y2, x1:x2] = cv2.bitwise_or(mask[y1:y2, x1:x2], dilated)
             
-        # Eksekusi Inpainting menggunakan mask yang sudah presisi
+        # Eksekusi Inpainting (hanya akan menambal jalur huruf, background aman)
         inpainted_bgr = cv2.inpaint(img_bgr, mask, inpaintRadius=4, flags=cv2.INPAINT_NS)
         
         inpainted_rgb = cv2.cvtColor(inpainted_bgr, cv2.COLOR_BGR2RGB)
@@ -149,7 +137,6 @@ class Typesetter:
                 cw = font.getbbox(line)[2] - font.getbbox(line)[0]
                 cx = (orig_bw - cw) // 2
                 
-                # Outline (stroke) SFX tetap 8% agar proporsional
                 stroke_w = max(2, int(font_size * 0.08)) if is_single_word else max(1, int(font_size * 0.05))
                 
                 txt_draw.text(
@@ -172,7 +159,6 @@ class Typesetter:
             pil_img.paste(txt_canvas, (paste_x, paste_y), txt_canvas)
                 
         return pil_img
-
 
 def download_image(url, save_path, chapter_url=""):
     headers = {

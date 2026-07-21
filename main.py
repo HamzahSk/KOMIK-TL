@@ -4,6 +4,7 @@ import re
 import zipfile
 import time
 import concurrent.futures
+import json # [BARU] Import modul json
 from PIL import Image
 
 import config
@@ -25,6 +26,8 @@ def main():
         return
 
     os.makedirs("output", exist_ok=True)
+    os.makedirs("ai_logs", exist_ok=True) # [BARU] Buat folder terpisah untuk menyimpan log JSON
+
     all_targets = []
 
     for m_url in mangas:
@@ -148,7 +151,7 @@ def main():
             page_blocks_list.append((path, blocks))
 
         # ==========================================
-        # FASE 4: Batch Translation (Hanya untuk teks panjang/tak terdaftar)
+        # FASE 4: Batch Translation & Simpan Log JSON
         # ==========================================
         hasil_terjemahan = []
         if kumpulan_teks_untuk_ai:
@@ -171,6 +174,17 @@ def main():
                 
             if current_batch:
                 hasil_terjemahan.extend(translator.translate_batch(current_batch))
+            
+            # [BARU] Simpan teks input dan output ke format JSON per chapter
+            input_log_path = os.path.join("ai_logs", f"input_{manga_title}_{chapter_name}.json")
+            output_log_path = os.path.join("ai_logs", f"output_{manga_title}_{chapter_name}.json")
+            
+            with open(input_log_path, 'w', encoding='utf-8') as f:
+                json.dump(kumpulan_teks_untuk_ai, f, ensure_ascii=False, indent=4)
+                
+            with open(output_log_path, 'w', encoding='utf-8') as f:
+                json.dump(hasil_terjemahan, f, ensure_ascii=False, indent=4)
+            print(f"Berhasil menyimpan log AI ke folder ai_logs/")
                 
         # Gabungkan hasil AI kembali ke blok masing-masing
         for path, blocks in page_blocks_list:

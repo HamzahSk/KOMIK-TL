@@ -1,3 +1,4 @@
+# translate.yml
 name: Manga Auto Translator Workflow
 
 on:
@@ -61,4 +62,12 @@ jobs:
         with:
           name: manga-translations
           path: output/
+          retention-days: 7
+
+      # [BARU] Step untuk mengunggah log JSON teks AI
+      - name: Upload AI Translation Logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-translation-logs
+          path: ai_logs/
           retention-days: 7
