@@ -1,4 +1,4 @@
-rapidocr
+rapidocr==3.9.1
 onnxruntime
 opencv-python
 pillow
