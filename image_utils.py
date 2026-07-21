@@ -128,8 +128,15 @@ class Typesetter:
             active_font_path = sfx_font_path if is_sfx and os.path.exists(sfx_font_path) else font_path
             # ---------------------------
             
+            # --- TAMBAHAN LOGIKA SFX ---
+            # Anggap teks sebagai SFX jika dia cuma 1 kata dan ukurannya di atas 50 piksel
+            is_sfx = is_single_word and font_size > 50
+            
+            # Gunakan Dark Poestry jika ini SFX, jika tidak kembali ke font dialog biasa
+            active_font_path = sfx_font_path if is_sfx and os.path.exists(sfx_font_path) else font_path
+            # ---------------------------
+            
             while font_size > 8:
-                # Ganti 'font_path' di bawah ini dengan 'active_font_path'
                 font = ImageFont.truetype(active_font_path, font_size) if os.path.exists(active_font_path) else ImageFont.load_default()
                 lines, current_line = [], []
                 
@@ -137,6 +144,23 @@ class Typesetter:
                     bb = font.getbbox(text)
                     return bb[2] - bb[0] if bb else 0
                 
+                # --- PERBAIKAN LOGIKA SFX (1 KATA) ---
+                if is_single_word:
+                    word_width = get_tw(words[0])
+                    # Hitung tinggi baris
+                    line_height = font.getbbox("A")[3] - font.getbbox("A")[1] + int(font_size * 0.45)
+                    
+                    # Syarat ketat: Lebar DAN Tinggi harus muat di dalam kotak (dikurangi margin 5%)
+                    if word_width <= bw * 0.95 and line_height <= bh * 0.95:
+                        lines = [words[0]]
+                        total_height = line_height
+                        break  # Sudah muat, keluar dari loop
+                    else:
+                        font_size -= 2 # Perkecil ukuran font dan coba lagi
+                        continue
+                # -------------------------------------
+                
+                # --- LOGIKA TEKS DIALOG (BANYAK KATA) ---
                 for word in words:
                     word_width = get_tw(word)
                     
@@ -176,8 +200,10 @@ class Typesetter:
                 if total_height <= bh * 0.95:
                     break
                 font_size -= 1
+                # ----------------------------------------
 
             orig_bw = box[2] - box[0]
+
             
             txt_canvas = Image.new('RGBA', (orig_bw, bh), (0, 0, 0, 0))
             txt_draw = ImageDraw.Draw(txt_canvas)
