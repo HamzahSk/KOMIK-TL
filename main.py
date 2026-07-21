@@ -123,7 +123,8 @@ def main():
             "SLAP": "PLAK",
             "SIGH": "HAHH",
             "UHH": "EHH",
-            "SPRING": "SPRING"
+            "SPRING": "SPRING",
+            "SHOCKED": "KAGET"
         }
 
         for path in final_paths: 
