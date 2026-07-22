@@ -54,9 +54,13 @@ class OCREngine:
             clean_text = re.sub(r'[^A-Z0-9\s.,!?\'"~-]', '', fixed_text).strip() 
             clean_text = re.sub(r'\s+', ' ', clean_text)
             
-            # FITUR BARU: Filter "Sampah"
-            # Jangan masukkan teks kalau isinya cuma angka/simbol doang, atau deretan huruf O berulang (kayak titik keringat)
-            if re.fullmatch(r'[O0-9\W]+', clean_text) or len(clean_text) < 2:
+            # PERBAIKAN FILTER SAMPAH:
+            # Pastikan teks minimal punya 1 huruf (A-Z). Kalau isinya cuma angka/simbol, buang.
+            # Kalau isinya cuma "O" diulang-ulang (titik keringat/gelembung kosong), buang.
+            has_letters = bool(re.search(r'[A-Z]', clean_text))
+            is_sweat_drops = re.fullmatch(r'[O0-9\W_]+', clean_text) and len(clean_text) >= 2
+            
+            if not has_letters or is_sweat_drops:
                 continue 
             
             if clean_text: 
@@ -91,24 +95,16 @@ class OCREngine:
                 min_h = min(prev_h, next_h)
                 max_h = max(prev_h, next_h)
                 
-                # PERKETAT ATURAN HORIZONTAL
                 is_horizontally_overlapping = (min(prev_box[2], next_box[2]) - max(prev_box[0], next_box[0])) > -5
                 prev_cx = (prev_box[0] + prev_box[2]) / 2
                 next_cx = (next_box[0] + next_box[2]) / 2
                 max_w = max(prev_box[2] - prev_box[0], next_box[2] - next_box[0])
                 
-                # Jarak tengah harus bener-bener sejajar (diubah dari 0.6 jadi 0.3)
-                # Biar teks yang sebelahan di gelembung yang sama gak digabung paksa
                 is_center_aligned = abs(prev_cx - next_cx) < (max_w * 0.3) 
-                
                 is_horizontally_aligned = is_horizontally_overlapping and is_center_aligned
                 
-                # PERKETAT ATURAN VERTIKAL
-                # Jarak antar baris ke bawah nggak boleh terlalu jauh
                 is_vertically_close = (-min_h * 1.5) <= (next_box[1] - prev_box[3]) <= (min_h * 1.5)
-                
                 is_height_similar = (max_h / max(1, min_h)) < 1.6 
-                
                 is_angle_similar = abs(lines[j]['angle'] - group_angles[-1]) < 12
             
                 if is_horizontally_aligned and is_vertically_close and is_height_similar and is_angle_similar:
@@ -121,9 +117,12 @@ class OCREngine:
             max_x, max_y = max([b[2] for b in group_boxes]), max([b[3] for b in group_boxes])
             
             gabungan_teks = " ".join(combined_text)
+            
+            # PERBAIKAN BATAS HURUF:
+            # Cukup minimal 1 huruf yang valid (bukan spasi/simbol) biar dialog pendek kayak "OK", "I", "AH" gak hilang!
             jumlah_huruf = len(re.sub(r'[^A-Z]', '', gabungan_teks.upper()))
             
-            if jumlah_huruf > 2:
+            if jumlah_huruf >= 1:
                 merged.append({
                     "text": gabungan_teks,
                     "box": [min_x, min_y, max_x, max_y], 

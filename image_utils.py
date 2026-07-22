@@ -65,6 +65,7 @@ class ImageProcessor:
 
 class Typesetter:
     @staticmethod
+    @staticmethod
     def apply_text(pil_img, text_blocks, font_path="arial.ttf"):
         # ==========================================
         # 0. FASE FILTERING (Pisahkan Dialog & SFX)
@@ -81,22 +82,34 @@ class Typesetter:
                 
             font_size = int(block.get('orig_line_height', bh) * 0.9)
             words = text_str.split()
+            angle = abs(block.get('angle', 0.0))
             
-            # -- LOGIKA PENDETEKSI SFX --
+            # -- LOGIKA PENDETEKSI SFX (SUPER KETAT) --
             is_sfx = False
             
-            # Cek 1: Pengulangan huruf ekstrim (Minimal 3 huruf sama berturut-turut, misal "BAMMM")
+            # Cek 1: Pengulangan huruf (misal: "BAMMM", "HUUUE")
             if re.search(r'(.)\1{2,}', text_str):
                 is_sfx = True
             
-            # Cek 2: Rasio kotak (SFX biasanya sangat lebar atau sangat tinggi)
-            ratio = bw / bh if bh > 0 else 1
-            if len(words) <= 2 and font_size > 45 and (ratio > 3.0 or ratio < 0.4):
+            # Cek 2: Ukuran Font Raksasa tapi kata sedikit (Pasti SFX)
+            if len(words) <= 4 and font_size > 55:
+                is_sfx = True
+                
+            # Cek 3: Kemiringan (Angle)
+            # Teks dialog normal itu lurus (angle mendekati 0). 
+            # Kalau miring banget (> 10 derajat) dan katanya dikit, abaikan!
+            if angle >= 10.0 and len(words) <= 3:
                 is_sfx = True
             
-            # PENGECUALIAN (Penyelamat teks teriak/marah): 
-            # Kalau teksnya ada tanda seru atau tanda tanya, dipastikan itu DIALOG, bukan SFX.
-            if "!" in text_str or "?" in text_str:
+            # Cek 4: Rasio ekstrim
+            ratio = bw / bh if bh > 0 else 1
+            if len(words) <= 2 and (ratio > 3.5 or ratio < 0.4):
+                is_sfx = True
+            
+            # PENGECUALIAN YANG LEBIH AMAN: 
+            # Tanda seru/tanya HANYA menyelamatkan teks kalau ukurannya NORMAL (< 45) dan TIDAK MIRING.
+            # Kalau ukurannya segede gaban kayak "BLEGH!", biarkan dia tetap terdeteksi sebagai SFX.
+            if ("!" in text_str or "?" in text_str) and font_size < 45 and angle < 10.0:
                 is_sfx = False
                 
             # Kalau bukan SFX, masukkan ke daftar yang akan di-typeset
