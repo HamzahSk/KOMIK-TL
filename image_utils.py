@@ -1,9 +1,10 @@
 # image_utils.py
+import re
 import os
 import requests
 import concurrent.futures
 import numpy as np
-import cv2 # Tambahkan ini di deretan import atas
+import cv2 
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -64,7 +65,47 @@ class ImageProcessor:
 
 class Typesetter:
     @staticmethod
-    def apply_text(pil_img, text_blocks, font_path="arial.ttf", sfx_font_path="Dark Poestry.ttf"):
+    def apply_text(pil_img, text_blocks, font_path="arial.ttf"):
+        # ==========================================
+        # 0. FASE FILTERING (Pisahkan Dialog & SFX)
+        # ==========================================
+        valid_dialogues = []
+        
+        for block in text_blocks:
+            box = block['box']
+            text_str = block.get('text', '').upper()
+            bw, bh = box[2] - box[0], box[3] - box[1]
+            
+            if bw < 6 or bh < 6: 
+                continue
+                
+            font_size = int(block.get('orig_line_height', bh) * 0.9)
+            words = text_str.split()
+            
+            # -- LOGIKA PENDETEKSI SFX --
+            is_sfx = False
+            
+            # Cek 1: Pengulangan huruf ekstrim (Minimal 3 huruf sama berturut-turut, misal "BAMMM")
+            if re.search(r'(.)\1{2,}', text_str):
+                is_sfx = True
+            
+            # Cek 2: Rasio kotak (SFX biasanya sangat lebar atau sangat tinggi)
+            ratio = bw / bh if bh > 0 else 1
+            if len(words) <= 2 and font_size > 45 and (ratio > 3.0 or ratio < 0.4):
+                is_sfx = True
+            
+            # PENGECUALIAN (Penyelamat teks teriak/marah): 
+            # Kalau teksnya ada tanda seru atau tanda tanya, dipastikan itu DIALOG, bukan SFX.
+            if "!" in text_str or "?" in text_str:
+                is_sfx = False
+                
+            # Kalau bukan SFX, masukkan ke daftar yang akan di-typeset
+            if not is_sfx:
+                valid_dialogues.append(block)
+
+        # Ganti target blocks hanya dengan teks dialog yang valid
+        text_blocks = valid_dialogues
+
         # ==========================================
         # 1. FASE INPAINTING (Masking Teks via Canny Edge)
         # ==========================================
@@ -83,24 +124,17 @@ class Typesetter:
             if x2 - x1 < 5 or y2 - y1 < 5: continue
             
             roi_gray = gray[y1:y2, x1:x2]
-            
-            # 1. Cari garis tegas (huruf). Gradasi halus otomatis diabaikan!
             edges = cv2.Canny(roi_gray, 50, 150)
             
-            # 2. Tebalkan garis tersebut agar outline (stroke) putih khas komik ikut tertutup
             kernel = np.ones((5,5), np.uint8)
             dilated = cv2.dilate(edges, kernel, iterations=2)
             
-            # 3. Isi lubang di dalam huruf (seperti bagian dalam huruf O, A, P, dll)
             contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             cv2.drawContours(dilated, contours, -1, 255, -1)
             
-            # Tempelkan bentuk persis hurufnya ke mask utama
             mask[y1:y2, x1:x2] = cv2.bitwise_or(mask[y1:y2, x1:x2], dilated)
             
-        # Eksekusi Inpainting (hanya akan menambal jalur huruf, background aman)
         inpainted_bgr = cv2.inpaint(img_bgr, mask, inpaintRadius=4, flags=cv2.INPAINT_NS)
-        
         inpainted_rgb = cv2.cvtColor(inpainted_bgr, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(inpainted_rgb)
 
@@ -110,53 +144,24 @@ class Typesetter:
         for block in text_blocks:
             box = block['box']
             bw, bh = box[2] - box[0], box[3] - box[1]
-            if bw < 6 or bh < 6: continue
             
             display_text = block.get('translated_text', block['text'])
             words = display_text.upper().split()
-            is_single_word = len(words) <= 1
             
             max_font_limit = 150 
             font_size = int(block.get('orig_line_height', bh) * 0.9)
             font_size = max(10, min(max_font_limit, font_size)) 
             
-            # --- TAMBAHAN LOGIKA SFX ---
-            # Anggap teks sebagai SFX jika dia cuma 1 kata dan ukurannya di atas 50 piksel
-            is_sfx = is_single_word and font_size > 50
-            
-            # Gunakan Dark Poestry jika ini SFX, jika tidak kembali ke font dialog biasa
-            active_font_path = sfx_font_path if is_sfx and os.path.exists(sfx_font_path) else font_path
-            # ---------------------------
-            
+            # Kita hapus logika sfx_font_path karena SFX sudah di-skip total
             while font_size > 8:
-                font = ImageFont.truetype(active_font_path, font_size) if os.path.exists(active_font_path) else ImageFont.load_default()
+                font = ImageFont.truetype(font_path, font_size) if os.path.exists(font_path) else ImageFont.load_default()
                 lines, current_line = [], []
                 
                 def get_tw(text):
                     bb = font.getbbox(text)
                     return bb[2] - bb[0] if bb else 0
                 
-                # --- PERBAIKAN LOGIKA SFX (1 KATA) ---
-                if is_single_word:
-                    # Prediksi ketebalan stroke
-                    stroke_w = max(2, int(font_size * 0.08))
-                    
-                    # Tambahkan stroke ke perhitungan lebar dan tinggi
-                    word_width = get_tw(words[0]) + (stroke_w * 2) 
-                    line_height = font.getbbox("A")[3] - font.getbbox("A")[1] + int(font_size * 0.45)
-                    total_needed_h = line_height + (stroke_w * 2)
-                    
-                    # Syarat ketat: Total ukuran (termasuk stroke) tidak boleh melebihi kotak aslinya
-                    if word_width <= bw and total_needed_h <= bh:
-                        lines = [words[0]]
-                        total_height = line_height
-                        break  # Sudah muat, keluar dari loop
-                    else:
-                        font_size -= 2 # Perkecil ukuran font dan coba lagi
-                        continue
-                # -------------------------------------
-                
-                # --- LOGIKA TEKS DIALOG (BANYAK KATA) ---
+                # --- LOGIKA TEKS DIALOG ---
                 for word in words:
                     word_width = get_tw(word)
                     
@@ -196,12 +201,9 @@ class Typesetter:
                 if total_height <= bh * 0.95:
                     break
                 font_size -= 1
-                # ----------------------------------------
 
             orig_bw = box[2] - box[0]
 
-            # --- PERBAIKAN KANVAS ---
-            # Beri padding (margin ekstra) agar pinggiran huruf & stroke punya ruang luang
             pad_canvas = max(15, int(font_size * 0.3))
             canvas_w = orig_bw + (pad_canvas * 2)
             canvas_h = bh + (pad_canvas * 2)
@@ -209,14 +211,13 @@ class Typesetter:
             txt_canvas = Image.new('RGBA', (canvas_w, canvas_h), (0, 0, 0, 0))
             txt_draw = ImageDraw.Draw(txt_canvas)
             
-            # Hitung titik awal Y agar posisinya tetap di tengah
             current_y = (canvas_h - total_height) // 2
             
             for line in lines:
                 cw = font.getbbox(line)[2] - font.getbbox(line)[0]
                 cx = (canvas_w - cw) // 2
                 
-                stroke_w = max(2, int(font_size * 0.08)) if is_single_word else max(1, int(font_size * 0.05))
+                stroke_w = max(1, int(font_size * 0.05))
                 
                 txt_draw.text(
                     (cx, current_y), 
@@ -232,14 +233,13 @@ class Typesetter:
             if abs(angle) > 3: 
                 txt_canvas = txt_canvas.rotate(-angle, expand=True, resample=Image.BICUBIC)
             
-            # Sesuaikan perhitungan koordinat paste karena ukuran kanvas sekarang lebih besar
             paste_x = box[0] + (orig_bw - txt_canvas.width) // 2
             paste_y = box[1] + (bh - txt_canvas.height) // 2
             
             pil_img.paste(txt_canvas, (paste_x, paste_y), txt_canvas)
-            # ------------------------
                 
         return pil_img
+
 
 def download_image(url, save_path, chapter_url=""):
     headers = {
