@@ -7,9 +7,11 @@ from rapidocr import RapidOCR
 
 class OCREngine:
     def __init__(self, config_path="config.yaml"):
+        # Inisialisasi RapidOCR langsung menggunakan file config.yaml
         self.reader = RapidOCR(config_path=config_path)
 
     def detect_and_merge(self, img_path):
+        
         img = cv2.imread(img_path)
         if img is None:
             return []
@@ -44,6 +46,7 @@ class OCREngine:
             xs = [p[0] / 2.0 for p in bbox]
             ys = [p[1] / 2.0 for p in bbox]
             
+            # Hitung sudut kemiringan (Titik Kanan Atas - Titik Kiri Atas)
             dx = bbox[1][0] - bbox[0][0]
             dy = bbox[1][1] - bbox[0][1]
             angle = math.degrees(math.atan2(dy, dx))
@@ -54,20 +57,11 @@ class OCREngine:
             clean_text = re.sub(r'[^A-Z0-9\s.,!?\'"~-]', '', fixed_text).strip() 
             clean_text = re.sub(r'\s+', ' ', clean_text)
             
-            # PERBAIKAN FILTER SAMPAH:
-            # Pastikan teks minimal punya 1 huruf (A-Z). Kalau isinya cuma angka/simbol, buang.
-            # Kalau isinya cuma "O" diulang-ulang (titik keringat/gelembung kosong), buang.
-            has_letters = bool(re.search(r'[A-Z]', clean_text))
-            is_sweat_drops = re.fullmatch(r'[O0-9\W_]+', clean_text) and len(clean_text) >= 2
-            
-            if not has_letters or is_sweat_drops:
-                continue 
-            
             if clean_text: 
                 raw_lines.append({
                     "text": clean_text,
                     "box": [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))],
-                    "angle": angle 
+                    "angle": angle # <-- Menyimpan nilai kemiringan
                 })
                 
         return self._merge_dialog_bubbles(raw_lines)
@@ -75,6 +69,7 @@ class OCREngine:
     def _merge_dialog_bubbles(self, lines):
         if not lines: return []
         
+        # Urutkan berdasarkan Y Tengah agar stabil untuk teks miring
         lines.sort(key=lambda item: (item['box'][1] + item['box'][3]) / 2)
         
         merged, visited = [], set()
@@ -95,18 +90,27 @@ class OCREngine:
                 min_h = min(prev_h, next_h)
                 max_h = max(prev_h, next_h)
                 
+                # 1. KEMBALIKAN ATURAN HORIZONTAL ASLI YANG KETAT
+                # Memaksa teks harus bertumpuk/overlap secara horizontal (tidak bersebelahan)
                 is_horizontally_overlapping = (min(prev_box[2], next_box[2]) - max(prev_box[0], next_box[0])) > -5
                 prev_cx = (prev_box[0] + prev_box[2]) / 2
                 next_cx = (next_box[0] + next_box[2]) / 2
                 max_w = max(prev_box[2] - prev_box[0], next_box[2] - next_box[0])
+                is_center_aligned = abs(prev_cx - next_cx) < (max_w * 0.6)
                 
-                is_center_aligned = abs(prev_cx - next_cx) < (max_w * 0.3) 
                 is_horizontally_aligned = is_horizontally_overlapping and is_center_aligned
                 
-                is_vertically_close = (-min_h * 1.5) <= (next_box[1] - prev_box[3]) <= (min_h * 1.5)
-                is_height_similar = (max_h / max(1, min_h)) < 1.6 
+                # 2. ATURAN VERTIKAL
+                # Toleransi ke bawah (gap) dibuat ketat, toleransi ke atas (overlap) dilonggarkan untuk teks miring
+                is_vertically_close = (-min_h * 2.0) <= (next_box[1] - prev_box[3]) <= max(10, min_h * 0.8)
+                
+                # 3. ATURAN TINGGI BOX (HEIGHT RATIO)
+                # Dilonggarkan ke 3.0 karena box teks miring tingginya sangat fluktuatif dibanding teks lurus
+                is_height_similar = (max_h / max(1, min_h)) < 3.0
+                
+                # 4. KEMIRINGAN
                 is_angle_similar = abs(lines[j]['angle'] - group_angles[-1]) < 12
-            
+                
                 if is_horizontally_aligned and is_vertically_close and is_height_similar and is_angle_similar:
                     combined_text.append(lines[j]['text'])
                     group_boxes.append(next_box)
@@ -117,12 +121,9 @@ class OCREngine:
             max_x, max_y = max([b[2] for b in group_boxes]), max([b[3] for b in group_boxes])
             
             gabungan_teks = " ".join(combined_text)
-            
-            # PERBAIKAN BATAS HURUF:
-            # Cukup minimal 1 huruf yang valid (bukan spasi/simbol) biar dialog pendek kayak "OK", "I", "AH" gak hilang!
             jumlah_huruf = len(re.sub(r'[^A-Z]', '', gabungan_teks.upper()))
             
-            if jumlah_huruf >= 1:
+            if jumlah_huruf > 2:
                 merged.append({
                     "text": gabungan_teks,
                     "box": [min_x, min_y, max_x, max_y], 
