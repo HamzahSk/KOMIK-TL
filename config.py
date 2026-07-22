@@ -1,7 +1,24 @@
 # config.py
-URLMANGA = ["https://vymanga.com/manga/reverse-thinking"] # https://bbato.com/manga/soulbound"] 
+URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-""
+    "https://vymanga.com/read/reverse-thinking/2846526",  # Chapter 0.27
+    "https://vymanga.com/read/reverse-thinking/2570728",  # Chapter 1
+    "https://vymanga.com/read/reverse-thinking/3095852",  # Chapter 1.1
+    "https://vymanga.com/read/reverse-thinking/2573222",  # Chapter 2
+    "https://vymanga.com/read/reverse-thinking/2673877",  # Chapter 2.5
+    "https://vymanga.com/read/reverse-thinking/2573380",  # Chapter 3
+    "https://vymanga.com/read/reverse-thinking/2673881",  # Chapter 3.5
+    "https://vymanga.com/read/reverse-thinking/2574621",  # Chapter 4
+    "https://vymanga.com/read/reverse-thinking/2673884",  # Chapter 4.5
+    "https://vymanga.com/read/reverse-thinking/2575140",  # Chapter 5
+    "https://vymanga.com/read/reverse-thinking/2582770",  # Chapter 6
+    "https://vymanga.com/read/reverse-thinking/2602637",  # Chapter 7
+    "https://vymanga.com/read/reverse-thinking/2607012",  # Chapter 8
+    "https://vymanga.com/read/reverse-thinking/2673888",  # Chapter 8.5
+    "https://vymanga.com/read/reverse-thinking/2618330",  # Chapter 9
+    "https://vymanga.com/read/reverse-thinking/2622560",  # Chapter 10
+    "https://vymanga.com/read/reverse-thinking/2632227",  # Chapter 11
+    "https://vymanga.com/read/reverse-thinking/2665903",  # Chapter 11.5
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking

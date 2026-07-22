@@ -57,7 +57,7 @@ def main():
         
         # Sanitasi nama agar aman untuk folder dan file sistem
         manga_title = re.sub(r'[^a-zA-Z0-9_\-\s]', '_', ch_info.get('title', 'Unknown_Manga')).strip()[:100]
-        chapter_name = re.sub(r'[^a-zA-Z0-9_\-\s]', '_', ch_info.get('chapter_name', 'Unknown_Chapter')).strip()[:100]
+        chapter_name = re.sub(r'[^a-zA-Z0-9 _.-]', '_', re.sub(r'\s+', ' ', ch_info.get('chapter_name', 'Unknown_Chapter'))).strip()[:100]
         
         # Path Folder: output/[Nama Manga]/[Nama Chapter Sementara]
         manga_dir = os.path.join("output", manga_title)
