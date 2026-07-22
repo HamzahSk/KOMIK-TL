@@ -389,9 +389,9 @@ def merge_short_images(raw_paths, target_height=2200, max_workers=6):
 
 def smart_slice_image(image_path, target_height=1200, out_dir="output"):
     """
-    Memotong gambar dengan Edge Detection.
-    Mampu mengenali background berpola/screentone dengan mencari
-    area yang minim garis tegas (minim teks/border panel).
+    Memotong gambar dengan Edge Detection & Morphological Dilation.
+    Aman untuk teks/bubble karena huruf akan dilebur menjadi satu blok 
+    agar tidak terpotong di tengah-tengah kalimat.
     """
     import cv2
     import numpy as np
@@ -410,20 +410,19 @@ def smart_slice_image(image_path, target_height=1200, out_dir="output"):
     # 1. Ubah ke Grayscale
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     
-    # 2. Blur yang cukup kuat untuk menghancurkan pola background/screentone tipis
-    blurred = cv2.GaussianBlur(gray, (15, 15), 0)
+    # 2. Deteksi Tepi (Canny) tanpa blur berlebih agar garis teks/panel tetap tajam
+    edges = cv2.Canny(gray, 50, 150)
     
-    # 3. Deteksi Tepi (Canny) - hanya menangkap garis-garis yang sangat kontras
-    edges = cv2.Canny(blurred, 30, 100)
+    # 3. KUNCI UTAMA: Morphological Dilation
+    # Kita "melebarkan" garis tepi dengan kotak besar (30x30).
+    # Efeknya: Huruf-huruf di dalam balon percakapan akan menyatu menjadi
+    # satu blok putih yang solid. Algoritma TIDAK AKAN menganggap
+    # spasi antar baris kalimat sebagai "ruang kosong".
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (30, 30))
+    dilated = cv2.dilate(edges, kernel, iterations=1)
     
-    # 4. Hitung kepadatan garis tepi per baris (edges bernilai 255 untuk garis)
-    # Kita bagi 255 agar nilainya jadi jumlah piksel (0, 1, 2, dst)
-    row_edge_count = np.sum(edges, axis=1) / 255.0
-    
-    # 5. Baris aman adalah baris yang jumlah piksel garisnya sangat sedikit
-    # Toleransi: maksimal 2% dari lebar gambar boleh ada garis (mengabaikan noise/sisa background)
-    tolerance = width * 0.02
-    safe_rows = row_edge_count <= tolerance
+    # 4. Hitung kepadatan (density) garis per baris
+    row_density = np.sum(dilated, axis=1) / 255.0
     
     sliced_paths = []
     y_start = 0
@@ -437,30 +436,51 @@ def smart_slice_image(image_path, target_height=1200, out_dir="output"):
         
         if y_end >= height:
             y_end = height
-        else:
-            search_limit_up = max(y_start + int(target_height * 0.3), 0)
-            search_limit_down = min(y_start + int(target_height * 1.5), height)
+            slice_img = img[y_start:y_end, :]
+            slice_path = os.path.join(out_dir, f"{base_name}_part{part}.jpg")
+            cv2.imwrite(slice_path, slice_img)
+            sliced_paths.append(slice_path)
+            break
             
-            found_safe_cut = False
+        gap_size = 15 # Butuh area kosong secara vertikal minimal 15 piksel
+        found_safe_cut = False
+        
+        # Toleransi dinamis: kita mulai dari 0 (harus benar-benar area kosong melompong).
+        # Jika gak ketemu celah sama sekali, baru toleransi dinaikkan sedikit demi sedikit 
+        # untuk memotong background/screentone tipis.
+        tolerance = 0
+        max_tolerance = width * 0.10 # Batas maksimal toleransi (10% dari lebar)
+        
+        while tolerance <= max_tolerance and not found_safe_cut:
+            safe_rows = row_density <= tolerance
             
-            # Cari celah aman ke ATAS (butuh gap 15 piksel)
-            for y_candidate in range(y_end, search_limit_up, -1):
-                if y_candidate - 15 > 0 and np.all(safe_rows[y_candidate-15 : y_candidate]):
-                    y_end = y_candidate - 7
+            # Cari celah aman ke ATAS dulu (sampai setengah dari target height)
+            search_limit_up = max(y_start + int(target_height * 0.5), y_start + gap_size)
+            for y in range(y_end, search_limit_up, -1):
+                if np.all(safe_rows[y-gap_size : y]):
+                    y_end = y - (gap_size // 2) # Potong tepat di tengah-tengah celah aman
                     found_safe_cut = True
                     break
             
-            # Coba cari ke BAWAH kalau di atas terlalu padat teks/panel
+            # Jika gagal mencari ke atas, cari ke BAWAH
             if not found_safe_cut:
-                for y_candidate in range(y_end, search_limit_down):
-                    if y_candidate + 15 < height and np.all(safe_rows[y_candidate : y_candidate+15]):
-                        y_end = y_candidate + 7
+                search_limit_down = min(y_start + int(target_height * 1.5), height - gap_size)
+                for y in range(y_end, search_limit_down):
+                    if np.all(safe_rows[y : y+gap_size]):
+                        y_end = y + (gap_size // 2)
                         found_safe_cut = True
                         break
             
+            # Jika masih belum ketemu area kosong, naikkan toleransinya (paksa cari celah di background)
             if not found_safe_cut:
-                print(f"[Warning] Area terlalu padat di {base_name}. Potong paksa di Y:{y_end}.")
-        
+                if tolerance == 0:
+                    tolerance = width * 0.02
+                else:
+                    tolerance += width * 0.03
+
+        if not found_safe_cut:
+            print(f"[Warning] Area terlalu padat di {base_name}. Potong paksa di Y:{y_end}.")
+    
         slice_img = img[y_start:y_end, :]
         slice_path = os.path.join(out_dir, f"{base_name}_part{part}.jpg")
         cv2.imwrite(slice_path, slice_img)
