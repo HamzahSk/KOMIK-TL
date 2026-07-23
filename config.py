@@ -1,5 +1,5 @@
 # config.py
-URLMANGA = ["https://vymanga.com/manga/the-horizon"] # https://bbato.com/manga/soulbound"] 
+URLMANGA = ["https://vymanga.com/manga/the-horizon"] # https://bbato.com/manga/soulbound"]  
 URLCHAPTER = [
     "",
 ]

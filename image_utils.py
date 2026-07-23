@@ -159,6 +159,10 @@ class Typesetter:
             is_sfx = is_single_word and font_size > 50
             
             active_font_path = sfx_font_path if is_sfx and os.path.exists(sfx_font_path) else font_path
+ 
+            total_height = 0
+            line_height = 0
+            lines = []
             
             while font_size > 8:
                 font = ImageFont.truetype(active_font_path, font_size) if os.path.exists(active_font_path) else ImageFont.load_default()
@@ -175,7 +179,8 @@ class Typesetter:
                     line_height = font.getbbox("A")[3] - font.getbbox("A")[1] + int(font_size * 0.45)
                     total_needed_h = line_height + (stroke_w * 2)
                     
-                    if word_width <= bw and total_needed_h <= bh:
+                    if word_width <= (bw * 1.5) and total_needed_h <= (bh * 1.2):
+
                         lines = [words[0]]
                         total_height = line_height
                         break  
