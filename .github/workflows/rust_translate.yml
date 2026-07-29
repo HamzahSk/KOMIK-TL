@@ -1,0 +1,81 @@
+name: Manga Auto Translator Workflow (Rust)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - 'src/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'config.yaml'
+  workflow_dispatch:
+
+jobs:
+  translate:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      # Setup toolchain Rust resmi & terbaru
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      # Cache direktori Cargo & Target agar waktu build jauh lebih cepat pada run berikutnya
+      - name: Cache Cargo & Build Target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            target/
+          key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-build-
+
+      # Install pustaka sistem yang wajib ada untuk OCR (Tesseract / leptess) dan rendering gambar
+      - name: Install System Dependencies for OCR & Image Processing
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            tesseract-ocr \
+            tesseract-ocr-eng \
+            tesseract-ocr-ind \
+            tesseract-ocr-jpn \
+            libtesseract-dev \
+            libleptonica-dev \
+            fonts-liberation \
+            libfontconfig1-dev
+
+      # Build & Compile dengan mode Release agar performa eksekusinya maksimal
+      - name: Build Project (Release)
+        run: cargo build --release
+
+      # Jalankan binary Rust yang sudah dikompilasi
+      - name: Run Translator
+        run: |
+          ./target/release/komik-tl
+        env:
+          RUST_LOG: info
+
+      # Upload Artifact: Komik CBZ/gambar hasil terjemahan
+      - name: Upload Output Artifact (Manga Translations)
+        uses: actions/upload-artifact@v4
+        with:
+          name: manga-translations
+          path: output/
+          retention-days: 7
+
+      # Upload Artifact: Log JSON teks dari dan ke AI (sesuai direktori ai_logs di main.rs)
+      - name: Upload AI Translation Logs
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-translation-logs
+          path: ai_logs/
+          retention-days: 7
+          
