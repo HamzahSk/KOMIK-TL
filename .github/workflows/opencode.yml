@@ -18,9 +18,15 @@ jobs:
         with:
           node-version: 22
 
-      # (Opsional) Setup Rust environment jaga-jaga jika OpenCode butuh validasi sintaks
+      # Setup Rust environment
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+
+      # Install dependensi sistem untuk Tesseract OCR agar tidak error saat cargo check
+      - name: Install OCR System Dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq tesseract-ocr libtesseract-dev libleptonica-dev
 
       - name: Install OpenCode
         run: npm install -g opencode-ai
@@ -33,16 +39,22 @@ jobs:
           opencode run \
             --model opencode/deepseek-v4-flash-free \
             --auto \
-            "Tolong ubah seluruh proyek manga auto translator ini (dari Python) menjadi menggunakan bahasa Rust agar prosesnya jauh lebih cepat. Tolong tingkatkan juga sistem logging-nya agar lebih detail, dan perbaiki logika akurasi OCR-nya menggunakan crate Rust yang optimal." || true
+            "Tolong ubah seluruh proyek manga auto translator ini (dari Python) menjadi menggunakan bahasa Rust agar prosesnya jauh lebih cepat. Pastikan menggunakan crate leptess versi 0.14 di Cargo.toml. Tolong tingkatkan juga sistem logging-nya agar lebih detail dan perbaiki logika akurasi OCR-nya." || true
 
       - name: Collect changed files
         run: |
+          # Tambahkan semua perubahan, tapi abaikan folder target/ atau cache agar ukuran kecil
           git add -A
 
           mkdir -p output_artifact
 
-          # Hanya copy file yang diubah/dibuat oleh OpenCode ke folder artifact
+          # Hanya copy file source code yang diubah/dibuat, abaikan folder 'target', node_modules, atau .git
           for file in $(git diff --cached --name-only); do
+            # Filter: lewati file jika berada di dalam folder target/ atau direktori sementara lainnya
+            if [[ "$file" == target/* ]] || [[ "$file" == .cargo/* ]] || [[ "$file" == *.lock ]]; then
+              continue
+            fi
+
             if [ -f "$file" ]; then
               mkdir -p "output_artifact/$(dirname "$file")"
               cp "$file" "output_artifact/$file"
