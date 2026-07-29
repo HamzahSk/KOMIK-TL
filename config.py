@@ -1,22 +1,7 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
-URLCHAPTER = urls = [
-    "https://vymanga.com/read/the-horizon/1227284",
-    "https://vymanga.com/read/the-horizon/1786871",
-    "https://vymanga.com/read/the-horizon/1227979",
-    "https://vymanga.com/read/the-horizon/1227980",
-    "https://vymanga.com/read/the-horizon/1786893",
-    "https://vymanga.com/read/the-horizon/1227984",
-    "https://vymanga.com/read/the-horizon/1227985",
-    "https://vymanga.com/read/the-horizon/1786896",
-    "https://vymanga.com/read/the-horizon/1227990",
-    "https://vymanga.com/read/the-horizon/1227991",
-    "https://vymanga.com/read/the-horizon/1227994",
-    "https://vymanga.com/read/the-horizon/1227996",
-    "https://vymanga.com/read/the-horizon/1786899",
-    "https://vymanga.com/read/the-horizon/1227997",
-    "https://vymanga.com/read/the-horizon/1228003",
-    "https://vymanga.com/read/the-horizon/1228006",
+URLCHAPTER = [
+    "https://vymanga.com/read/reverse-thinking/2622560",
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking

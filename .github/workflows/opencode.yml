@@ -1,0 +1,57 @@
+name: OpenCode Rust Migration
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  opencode:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Setup Node.js dibutuhkan untuk menjalankan opencode-ai
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      # (Opsional) Setup Rust environment jaga-jaga jika OpenCode butuh validasi sintaks
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install OpenCode
+        run: npm install -g opencode-ai
+
+      - name: Check OpenCode Version
+        run: opencode --version
+
+      - name: Run OpenCode with Rust Migration Prompt
+        run: |
+          opencode run \
+            --model opencode/deepseek-v4-flash-free \
+            --auto \
+            "Tolong ubah seluruh proyek manga auto translator ini (dari Python) menjadi menggunakan bahasa Rust agar prosesnya jauh lebih cepat. Tolong tingkatkan juga sistem logging-nya agar lebih detail, dan perbaiki logika akurasi OCR-nya menggunakan crate Rust yang optimal." || true
+
+      - name: Collect changed files
+        run: |
+          git add -A
+
+          mkdir -p output_artifact
+
+          # Hanya copy file yang diubah/dibuat oleh OpenCode ke folder artifact
+          for file in $(git diff --cached --name-only); do
+            if [ -f "$file" ]; then
+              mkdir -p "output_artifact/$(dirname "$file")"
+              cp "$file" "output_artifact/$file"
+            fi
+          done
+
+      - name: Upload Rust Code Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencode-rust-result-${{ github.sha }}
+          path: output_artifact/
+          retention-days: 7
