@@ -1,275 +1,113 @@
 # translator.py
-import time
 import re
-import random
-import requests
-import urllib.parse
+import time
+from transformers import MarianMTModel, MarianTokenizer
 
 class AiTranslator:
     def __init__(self):
-        # Konfigurasi API Utama (Deepseek Custom Endpoint)
-        self.main_api_base = 'http://185.211.103.141:3613/chat/deepseek'
-        self.current_chat_id = None # Menyimpan ID sesi untuk 1 chapter
+        # Menggunakan model offline NMT Inggris -> Indonesia dari HuggingFace
+        self.model_name = "Helsinki-NLP/opus-mt-en-id"
+        self.tokenizer = None
+        self.model = None
+        self.BATCH_SIZE = 8  # Dibatasi 8 agar RAM 7GB GitHub Actions aman & cepat
         
-        # Konfigurasi API Fallback 1 (DeepSeek Proxy)
-        self.fallback_url = 'https://llmproxy.org/api/chat.php'
+        # Kamus SFX Tambahan (karena model NMT kurang gaul untuk bunyi-bunyian)
+        self.SFX_MAP = {
+            "BAM": "DOR", "THUMP": "DEG", "SLAM": "BRAK", 
+            "GASP": "HAAH", "CREAK": "KRIET", "SPLASH": "BYUR",
+            "CLICK": "KLIK", "ROAR": "ROAAR", "SIGH": "HAHH"
+        }
         
-        # Konfigurasi API Fallback 2 (TheTurboChat / Gemini)
-        self.fallback_url_2 = 'https://theturbochat.com/api/chat/message'
-        
-        self.MAX_CHARS = 1500
-        self.SEPARATOR = '130495848'
-        
-        self.instruction = (
-            "Terjemahkan teks komik hasil OCR ini ke bahasa Indonesia yang natural, hidup, dan emosional, "
-            "seolah komik ini aslinya berbahasa Indonesia. Dialog dan monolog harus mengalir seperti percakapan nyata, "
-            "bukan textbook atau terjemahan kaku. Hindari kata 'lu/gue' atau slang berlebihan yang terkesan tidak profesional; "
-            "gunakan 'aku/kamu/kau' atau 'saya/Anda' sesuai konteks karakter. SFX wajib diterjemahkan ke padanan alami Indonesia "
-            "(contoh: BAM→DOR, THUMP→DEG, SLAM→BRAK, GASP→HAAH, CREAK→KRIET, SPLASH→BYUR). Jika ada typo atau teks rusak "
-            "akibat OCR, tafsirkan maksudnya berdasarkan bunyi dan konteks panel, lalu terjemahkan maknanya. "
-            "Nama tokoh dan istilah khusus jangan diubah. Jangan tambahkan simbol, emoji, atau format apa pun "
-            "yang tidak ada di teks asli."
-        )
+        self._load_model()
+
+    def _load_model(self):
+        """Memuat tokenizer dan model NMT offline ke memori CPU."""
+        print(f"[System] Memuat model offline: {self.model_name}...")
+        start_time = time.time()
+        try:
+            self.tokenizer = MarianTokenizer.from_pretrained(self.model_name)
+            self.model = MarianMTModel.from_pretrained(self.model_name)
+            print(f"[System] Model offline sukses dimuat dalam {time.time() - start_time:.2f} detik!")
+        except Exception as e:
+            print(f"[Error] Gagal memuat model offline: {e}")
 
     def reset_chapter_session(self):
-        """Panggil ini setiap kali pindah chapter agar ID chat direset ke None."""
-        self.current_chat_id = None
-        print("[System] Sesi Chat ID Translator direset untuk chapter baru.")
+        """Fungsi kompatibilitas dengan main.py agar tidak error saat pindah chapter."""
+        print("[System] Sesi chapter baru dimulai (Offline Mode).")
 
-    def _get_fallback_headers(self):
-        """Membuat header dinamis dengan IP acak untuk fallback 1."""
-        ip = f"{random.randint(1, 255)}.{random.randint(0, 255)}.{random.randint(0, 255)}.{random.randint(0, 255)}"
-        return {
-            'Accept': '*/*',
-            'Content-Type': 'application/json',
-            'Origin': 'https://deep-seek.online',
-            'Referer': 'https://deep-seek.online/',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'X-Forwarded-For': ip,
-            'X-Real-IP': ip,
-            'CF-Connecting-IP': ip
-        }
+    def _preprocess_text(self, text):
+        """Membersihkan teks sebelum masuk ke model agar hasil terjemahan lebih natural."""
+        cleaned = text.strip()
+        # Jika teks persis kata SFX bahasa Inggris, langsung ganti
+        upper_text = re.sub(r'[^A-Z]', '', cleaned.upper())
+        if upper_text in self.SFX_MAP and len(cleaned.split()) == 1:
+            return self.SFX_MAP[upper_text], True
+        return cleaned, False
 
-    def _create_batches(self, texts):
-        batches = []
-        current_batch = []
-        current_length = 0
-        for text in texts:
-            text_length = len(text)
-            if current_length + text_length + len(self.SEPARATOR) > self.MAX_CHARS:
-                if current_batch:
-                    batches.append(current_batch)
-                current_batch = [text]
-                current_length = text_length
-            else:
-                current_batch.append(text)
-                current_length += text_length + len(self.SEPARATOR)
-        if current_batch:
-            batches.append(current_batch)
-        return batches
-
-    # PERBAIKAN: Indentasi dimundurkan agar sejajar dengan fungsi lainnya
-    def _format_batch_text(self, batch_texts):
-        return (
-            f"INSTRUCTION: {self.instruction}\n\n"
-            f"ATURAN PENTING: Di bawah ini ada kumpulan teks komik yang dipisahkan oleh '{self.SEPARATOR}'. "
-            f"Teks-teks ini bisa berupa dialog bubble, SFX, atau campuran dari beberapa panel. "
-            f"Dialog antar bubble mungkin masih dalam satu percakapan yang sama—pastikan terjemahannya tetap nyambung "
-            f"secara alur dan karakter. Cermati dan bedakan mana dialog dan mana SFX sebelum menerjemahkan. "
-            f"Hasil akhir harus berupa teks terjemahan *BAHASA INDONESIA* yang dipisahkan oleh '{self.SEPARATOR}' tanpa tambahan "
-            f"penjelasan, basa-basi, atau penomoran apa pun.\n\n"
-            f"TEKS SUMBER:\n\n"
-            + f"\n{self.SEPARATOR}\n".join(batch_texts)
-        )
-
-    def _fallback_translate(self, prompt_text):
-        """Metode fallback 1 menggunakan DeepSeek via llmproxy."""
-        print("[System] Memulai sesi Fallback 1 via DeepSeek...")
-        
-        payload = {
-            "messages": [{"content": prompt_text, "role": "user"}],
-            "model": "v3",
-            "stream": False,
-            "web_search": False
-        }
-
-        try:
-            response = requests.post(
-                self.fallback_url, 
-                headers=self._get_fallback_headers(), 
-                json=payload, 
-                timeout=45
-            )
-            response.raise_for_status()
-            data = response.json()
-            
-            content = data.get('content', '')
-            clean_content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL | re.IGNORECASE).strip()
-            return clean_content
-            
-        except Exception as e:
-            print(f"[Error] Fallback 1 API DeepSeek gagal: {e}")
-            return None
-
-    def _fallback_translate_2(self, prompt_text):
-        """Metode fallback 2 menggunakan Gemini via TheTurboChat."""
-        print("[System] Memulai sesi Fallback 2 via TheTurboChat (Gemini)...")
-        
-        headers = {
-            'accept': '*/*',
-            'content-type': 'application/json',
-            'origin': 'https://theturbochat.com',
-            'referer': 'https://theturbochat.com/gemini',
-            'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36'
-        }
-        
-        payload = {
-            "runtime": "gemini",
-            "message": prompt_text,
-            "configuration": None,
-            "history": [],
-            "language": "en",
-            "sourcePage": "/gemini"
-        }
-
-        try:
-            response = requests.post(
-                self.fallback_url_2, 
-                headers=headers, 
-                json=payload, 
-                timeout=45
-            )
-            response.raise_for_status()
-            data = response.json()
-            
-            return data.get('outputText', '')
-            
-        except Exception as e:
-            print(f"[Error] Fallback 2 API TheTurboChat gagal: {e}")
-            return None
-
-    def _verify_and_clean(self, ai_response, batch):
-        """Helper untuk mengekstrak dan memverifikasi keselarasan terjemahan."""
-        if not ai_response:
-            return None
-            
-        translations = self._extract_translations(ai_response)
-        
-        if len(translations) == len(batch):
-            return translations
-            
-        raw_lines = [line.strip() for line in ai_response.split('\n') if line.strip() and self.SEPARATOR not in line]
-        if len(raw_lines) == len(batch):
-            return [self._clean_part(l) for l in raw_lines]
-            
-        return None
+    def _clean_output(self, text):
+        """Merapikan spasi dan kapitalisasi standar setelah diterjemahkan."""
+        cleaned = text.strip()
+        # Perbaiki awalan karakter aneh jika ada
+        cleaned = re.sub(r'^\W+', '', cleaned)
+        return cleaned if cleaned else "-"
 
     def translate_batch(self, texts):
         if not texts:
             return []
-        
-        batches = self._create_batches(texts)
+            
+        if not self.model or not self.tokenizer:
+            print("[Warning] Model offline tidak tersedia, mengembalikan teks asli...")
+            return texts
+
+        print(f"\n[Offline NMT] Menerjemahkan {len(texts)} blok teks menggunakan CPU...")
         all_translations = []
-        
-        for batch_idx, batch in enumerate(batches):
-            print(f"\n[Batch {batch_idx+1}/{len(batches)}] Menerjemahkan {len(batch)} teks...")
-            user_message = self._format_batch_text(batch)
-            translations = []
-            
-            main_success = False
-            for attempt in range(2): # Mencoba maksimal 2 kali
-                try:
-                    # 1. Coba API Utama (Custom Deepseek Endpoint)
-                    encoded_query = urllib.parse.quote(user_message)
-                    req_url = f"{self.main_api_base}?q={encoded_query}"
-                    
-                    # Tambahkan ID jika sudah ada dari batch sebelumnya (di chapter yang sama)
-                    if self.current_chat_id:
-                        req_url += f"&id={self.current_chat_id}"
-                        
-                    response = requests.get(req_url, timeout=45)
-                    response.raise_for_status()
-                    data = response.json()
-                    
-                    if data.get('status') != 'success':
-                        raise ValueError(f"Status response API bukan success: {data}")
-                        
-                    ai_response_data = data.get('ai_response', {})
-                    if not ai_response_data.get('status'):
-                        raise ValueError(f"AI merespon dengan status false: {ai_response_data}")
-                        
-                    result_data = ai_response_data.get('data', {})
-                    ai_response_text = result_data.get('message', '')
-                    
-                    # Simpan chat_id untuk request batch berikutnya di chapter yang sama
-                    new_chat_id = result_data.get('id')
-                    if new_chat_id:
-                        self.current_chat_id = new_chat_id
-                    
-                    # Verifikasi hasil Utama
-                    translations = self._verify_and_clean(ai_response_text, batch)
-                    
-                    if translations:
-                        print(f"=== RESPON UTAMA SUKSES (Chat ID: {self.current_chat_id}) ===")
-                        main_success = True
-                        break # Jika sukses, keluar dari loop percobaan
-                    else:
-                        raise ValueError("Format teks dari API Utama berantakan.")
-                    
-                except Exception as e:
-                    print(f"[Warning] API Utama Bermasalah di percobaan {attempt + 1} ({e}).")
-                    if attempt == 0:
-                        print("Mencoba ulang API Utama sekali lagi dalam 2 detik...")
-                        time.sleep(2) # Jeda sebelum mencoba ulang
-            
-            # Jika setelah 2 kali coba masih gagal, jalankan Fallback
-            if not main_success:
-                print("[Warning] API Utama gagal setelah 2 kali percobaan. Beralih ke Fallback 1...")
-                
-                # 2. Fallback 1 (DeepSeek Proxy)
-                ai_response = self._fallback_translate(user_message)
-                translations = self._verify_and_clean(ai_response, batch)
-                
-                if translations:
-                    print("=== RESPON FALLBACK 1 SUKSES ===")
+
+        # Pisahkan menjadi batch-batch kecil agar tidak membebani RAM & CPU
+        for i in range(0, len(texts), self.BATCH_SIZE):
+            batch_texts = texts[i : i + self.BATCH_SIZE]
+            batch_results = []
+            to_translate = []
+            index_mapping = {}
+
+            # Filter cepat untuk teks SFX / teks kosong
+            for idx, text in enumerate(batch_texts):
+                processed_text, is_sfx = self._preprocess_text(text)
+                if is_sfx:
+                    batch_results.append((idx, processed_text))
                 else:
-                    print("[Warning] Fallback 1 Gagal atau Format Berantakan. Beralih ke Fallback 2...")
-                    
-                    # 3. Fallback 2 (TheTurboChat)
-                    ai_response = self._fallback_translate_2(user_message)
-                    translations = self._verify_and_clean(ai_response, batch)
-                    
-                    if translations:
-                        print("=== RESPON FALLBACK 2 SUKSES ===")
-                    else:
-                        print("[Error] Semua API dan Fallback gagal. Menggunakan teks asli.")
-                        translations = batch
+                    index_mapping[len(to_translate)] = idx
+                    to_translate.append(processed_text)
 
-            all_translations.extend(translations)
-            time.sleep(1.5)
-            
+            # Terjemahkan batch ke model HuggingFace / CTranslate2
+            if to_translate:
+                try:
+                    encoded_input = self.tokenizer(
+                        to_translate,
+                        return_tensors="pt",
+                        padding=True,
+                        truncation=True,
+                        max_length=512
+                    )
+                    
+                    # Generate terjemahan dengan CPU
+                    translated_tokens = self.model.generate(**encoded_input)
+                    decoded_texts = self.tokenizer.batch_decode(
+                        translated_tokens, 
+                        skip_special_tokens=True
+                    )
+
+                    for sub_idx, trans_text in enumerate(decoded_texts):
+                        original_idx = index_mapping[sub_idx]
+                        batch_results.append((original_idx, self._clean_output(trans_text)))
+
+                except Exception as e:
+                    print(f"[Error] Gagal menerjemahkan sub-batch: {e}")
+                    for sub_idx, raw_text in enumerate(to_translate):
+                        original_idx = index_mapping[sub_idx]
+                        batch_results.append((original_idx, raw_text))
+
+            # Urutkan kembali sesuai urutan halaman aslinya
+            batch_results.sort(key=lambda x: x[0])
+            all_translations.extend([item[1] for item in batch_results])
+
         return all_translations
-
-
-    def _clean_part(self, text):
-        cleaned = text.strip()
-        cleaned = re.sub(r'^\d+[\.\)]\s*', '', cleaned)
-        if ':' in cleaned:
-            prefix, suffix = cleaned.split(':', 1)
-            if 'terjemah' in prefix.lower():
-                cleaned = suffix.strip()
-        return cleaned
-
-    def _extract_translations(self, response_text):
-        if self.SEPARATOR in response_text:
-            parts = response_text.split(self.SEPARATOR)
-            translations = []
-            for part in parts:
-                cleaned = self._clean_part(part)
-                if cleaned:
-                    translations.append(cleaned)
-            return translations
-        
-        lines = [line.strip() for line in response_text.split('\n') if line.strip()]
-        translations = [self._clean_part(line) for line in lines]
-        return translations if translations else [response_text]

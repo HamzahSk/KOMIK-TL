@@ -26,7 +26,7 @@ jobs:
           python-version: "3.10"
           cache: "pip"
 
-      # Cache model OCR untuk PaddleOCR (model biasanya tersimpan di ~/.paddleocr)
+      # Cache untuk Model PaddleOCR
       - name: Cache PaddleOCR Models
         uses: actions/cache@v4
         with:
@@ -34,6 +34,15 @@ jobs:
           key: paddleocr-cache-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
           restore-keys: |
             paddleocr-cache-${{ runner.os }}-
+
+      # [BARU] Cache untuk Model HuggingFace / CTranslate2
+      - name: Cache HuggingFace Models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-cache-${{ runner.os }}-marianmt
+          restore-keys: |
+            hf-cache-${{ runner.os }}-
 
       - name: Install System Dependencies
         run: |
@@ -47,10 +56,13 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           
-          # 1. Install PaddlePaddle versi CPU khusus untuk GitHub Actions (agar cepat & ringan)
+          # 1. Install PaddlePaddle versi CPU
           python -m pip install paddlepaddle==3.2.0 -i https://www.paddlepaddle.org.cn/packages/stable/cpu/
           
-          # 2. Install sisa dependensi lainnya
+          # 2. Install CTranslate2, Transformers & SentencePiece untuk NLP Offline
+          pip install ctranslate2 transformers sentencepiece torch --index-url https://download.pytorch.org/whl/cpu
+          
+          # 3. Install sisa dependensi lainnya
           pip install -r requirements.txt
 
       - name: Run Translator Script
