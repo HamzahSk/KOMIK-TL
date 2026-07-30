@@ -89,10 +89,12 @@ def main():
         raw_paths = [downloaded_paths[idx] for idx in sorted(downloaded_paths.keys())]
 
         # ==========================================
-        # FASE 2: Gabungkan Gambar yang Terlalu Pendek
+        # FASE 2: Gabungkan Gambar (Sweet Spot: 8000px - 10000px)
         # ==========================================
-        print("Mengecek dimensi & menggabungkan gambar-gambar yang pendek...")
-        merged_paths = merge_short_images(raw_paths, target_height=2200, max_workers=6)
+        # 8000px sudah sangat cukup untuk memberi ruang jelajah area kosong
+        # tanpa risiko gambar blur atau RAM komputer crash.
+        print("Mengecek dimensi & menggabungkan gambar ke batch strip...")
+        merged_paths = merge_short_images(raw_paths, target_height=8000, max_workers=4)
 
         # ==========================================
         # FASE 2.5: Smart Slicing (Baru)
@@ -100,7 +102,14 @@ def main():
         print("Merapikan potongan panel gambar (Smart Slicing)...")
         final_paths = []
         for m_path in merged_paths:
-            slices = smart_slice_image(m_path, target_height=1300, out_dir=out_dir)
+            slices = smart_slice_image(
+                m_path, 
+                target_height=1300, 
+                min_height=600, 
+                max_height=1800, 
+                out_dir=out_dir,
+                ocr_engine=ocr
+            )
             final_paths.extend(slices)
             
             if len(slices) > 1 and os.path.exists(m_path):

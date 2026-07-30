@@ -513,7 +513,8 @@ def smart_slice_image(
     target_height=1200, 
     out_dir="output",
     min_height=600, 
-    max_height=1800
+    max_height=1800,
+    ocr_engine=None
 ):
     """
     Memotong gambar manhwa panjang secara cerdas tanpa memotong balon percakapan.
@@ -522,7 +523,7 @@ def smart_slice_image(
     1. Cari area kosong (gutter) di sekitar target_height.
     2. Jika tidak ada, cari ke atas (perkecil sampai min_height).
     3. Jika tidak ada, cari ke bawah (perbesar maksimal sampai max_height).
-    4. Jika tetap tidak ada, potong paksa di titik dengan aktivitas visual terendah.
+    4. Jika tetap tidak ada, potong paksa di titik paling aman (0% risiko memotong teks dari OCR/skor terendah).
     """
     img = cv2.imread(image_path)
     if img is None:
@@ -533,21 +534,28 @@ def smart_slice_image(
     if height <= max_height:
         return [image_path]
 
+    # --- 0. CEK ZONA LARANGAN POTONG DARI OCR (OPTIONAL TAPI SANGAT AKURAT) ---
+    forbidden_rows = np.zeros(height, dtype=bool)
+    if ocr_engine is not None:
+        try:
+            blocks = ocr_engine.detect_and_merge(image_path)
+            for b in blocks:
+                box = b['box']
+                # Beri margin pengaman 25px di atas dan di bawah kotak teks/balon
+                y1 = max(0, int(box[1]) - 25)
+                y2 = min(height, int(box[3]) + 25)
+                forbidden_rows[y1:y2] = True
+        except Exception as e:
+            print(f"[Warning] Gagal cek OCR untuk smart slice: {e}")
+
     # --- 1. PEMETAAN AKTIVITAS VISUAL ---
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    
-    # Deteksi garis/tepi menggunakan Sobel & Canny gabungan
     edges = cv2.Canny(gray, 30, 100)
-    
-    # Pengecekan standar deviasi warna per baris (mendeteksi area warna seragam/putih polos)
     row_std = np.std(gray.astype(np.float32), axis=1)
-    
-    # Kepadatan edge per baris (0.0 sampai 1.0)
     edge_density = np.sum(edges > 0, axis=1) / float(width)
     
-    # Baris dianggap "KOSONG/AMAN" jika variasi warna sangat kecil dan minim garis
-    # threshold std < 3.0 dan edge_density < 0.01 sangat aman untuk gutter manhwa
-    safe_rows = (row_std < 3.5) & (edge_density < 0.015)
+    # Baris aman: variasi warna rendah, minim garis, DAN TIDAK MENABRAK TEKS OCR
+    safe_rows = (row_std < 3.5) & (edge_density < 0.015) & (~forbidden_rows)
 
     sliced_paths = []
     y_start = 0
@@ -568,8 +576,6 @@ def smart_slice_image(
         return None
 
     while y_start < height:
-        # Jika sisa gambar ke bawah sudah lebih pendek atau sama dengan batas maksimal,
-        # langsung jadikan potongan terakhir.
         if height - y_start <= max_height:
             slice_img = img[y_start:height, :]
             slice_path = os.path.join(out_dir, f"{base_name}_part{part}.jpg")
@@ -597,19 +603,16 @@ def smart_slice_image(
         # --- LANGKAH 4: POTONG PAKSA DI AREA PALING AMAN (Bukan Balon Teks/Teks) ---
         if not found_cut:
             print(f"[Warning] Area penuh di {base_name} (Y: {y_start}-{y_start+max_height}). Mencari titik potong paksa teraman...")
-            
-            # Kita evaluasi rentang antara target_height sampai max_height
             force_min = min(y_start + target_height, height - 1)
             force_max = min(y_start + max_height, height)
             
-            # Cari baris dengan variasi warna terendah (paling rata/minim garis kontras)
-            # Menghindari memotong teks hitam di atas putih atau garis tepi balon
             best_y = force_min
             min_score = float('inf')
             
             for y in range(force_min, force_max):
-                # Skor = gabungan kepadatan tepi dan variasi warna baris
-                score = (edge_density[y] * 100) + row_std[y]
+                # Beri penalti skor sangat besar (1,000,000) jika baris tersebut menabrak teks OCR
+                penalty = 1000000 if forbidden_rows[y] else 0
+                score = (edge_density[y] * 100) + row_std[y] + penalty
                 if score < min_score:
                     min_score = score
                     best_y = y
