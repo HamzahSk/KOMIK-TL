@@ -4,6 +4,7 @@ import re
 import random
 import requests
 import urllib.parse
+import config
 
 class AiTranslator:
     def __init__(self):
@@ -20,17 +21,19 @@ class AiTranslator:
         self.MAX_CHARS = 1500
         self.SEPARATOR = '130495848'
         
-        self.instruction = (
-            "Terjemahkan teks komik hasil OCR ini ke bahasa Indonesia yang natural, hidup, dan emosional, "
-            "seolah komik ini aslinya berbahasa Indonesia. Dialog dan monolog harus mengalir seperti percakapan nyata, "
-            "bukan textbook atau terjemahan kaku. Hindari kata 'lu/gue' atau slang berlebihan yang terkesan tidak profesional; "
-            "gunakan 'aku/kamu/kau' atau 'saya/Anda' sesuai konteks karakter. SFX wajib diterjemahkan ke padanan alami Indonesia "
-            "(contoh: BAM→DOR, THUMP→DEG, SLAM→BRAK, GASP→HAAH, CREAK→KRIET, SPLASH→BYUR). Jika ada typo atau teks rusak "
-            "akibat OCR, tafsirkan maksudnya berdasarkan bunyi dan konteks panel, lalu terjemahkan maknanya. "
-            "Nama tokoh dan istilah khusus jangan diubah. Jangan tambahkan simbol, emoji, atau format apa pun "
-            "yang tidak ada di teks asli."
+        self.instruction = getattr(
+            config, 
+            "PROMPT_TRANSLATOR", 
+            "Terjemahkan teks komik ini ke bahasa Indonesia yang natural dan tidak kaku."
         )
-
+        
+        # [BARU] Ambil aturan format batch dari config.py
+        self.format_rules = getattr(
+            config,
+            "PROMPT_FORMAT_RULES",
+            "Terjemahkan teks di bawah ini dan pisahkan dengan '{separator}'."
+        )
+        
     def reset_chapter_session(self):
         """Panggil ini setiap kali pindah chapter agar ID chat direset ke None."""
         self.current_chat_id = None
@@ -69,15 +72,13 @@ class AiTranslator:
         return batches
 
     # PERBAIKAN: Indentasi dimundurkan agar sejajar dengan fungsi lainnya
+    
     def _format_batch_text(self, batch_texts):
+        rules_text = self.format_rules.format(separator=self.SEPARATOR)
+        
         return (
             f"INSTRUCTION: {self.instruction}\n\n"
-            f"ATURAN PENTING: Di bawah ini ada kumpulan teks komik yang dipisahkan oleh '{self.SEPARATOR}'. "
-            f"Teks-teks ini bisa berupa dialog bubble, SFX, atau campuran dari beberapa panel. "
-            f"Dialog antar bubble mungkin masih dalam satu percakapan yang sama—pastikan terjemahannya tetap nyambung "
-            f"secara alur dan karakter. Cermati dan bedakan mana dialog dan mana SFX sebelum menerjemahkan. "
-            f"Hasil akhir harus berupa teks terjemahan *BAHASA INDONESIA* yang dipisahkan oleh '{self.SEPARATOR}' tanpa tambahan "
-            f"penjelasan, basa-basi, atau penomoran apa pun.\n\n"
+            f"ATURAN PENTING: {rules_text}\n\n"
             f"TEKS SUMBER:\n\n"
             + f"\n{self.SEPARATOR}\n".join(batch_texts)
         )
