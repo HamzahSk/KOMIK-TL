@@ -60,3 +60,4 @@ Saya ingin kamu mengupgrade, mengoptimalkan, dan merefactor seluruh pipeline di 
 ## 3. Output yang Diharapkan
  1. Berikan penjelasan singkat mengenai konsep logika baru yang kamu terapkan untuk setiap perbaikan (OCR, Merge Bubble, Inpainting, dan Typesetting).
  2. Tuliskan kode lengkap atau bagian kode yang direfactor secara terstruktur untuk ocr_engine.py dan image_utils.py (serta file lain jika ada dependensi yang perlu disesuaikan) agar langsung siap digunakan tanpa error.
+
