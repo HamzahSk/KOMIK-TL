@@ -1,11 +1,8 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-    "https://vymanga.com/read/creating-a-hidden-ending/3231239", 
-    "https://vymanga.com/read/creating-a-hidden-ending/3251851",
-    "https://vymanga.com/read/creating-a-hidden-ending/3266099",
-    "https://vymanga.com/read/creating-a-hidden-ending/3285500",
-    "https://vymanga.com/read/creating-a-hidden-ending/3304264"
+    "https://vymanga.com/read/creating-a-hidden-ending/3157683"
+    
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking
