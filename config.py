@@ -1,12 +1,12 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-    "https://vymanga.com/read/reverse-thinking/2622560",
+    "https://vymanga.com/read/reverse-thinking/2622560"
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking
 
-FONT_PATH = "digistrip.ttf"
+FONT_DIR = "font"
 
 SELF_INSTRUCTION = """
 Terjemahkan teks komik hasil OCR ini ke bahasa Indonesia yang benar-benar natural dan hidup.

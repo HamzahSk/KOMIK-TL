@@ -19,8 +19,6 @@ def main():
     mangas = [u for u in config.URLMANGA if u.strip()]
     chapters = [u for u in config.URLCHAPTER if u.strip()]
     
-    font_path = getattr(config, 'FONT_PATH', 'arial.ttf')
-    
     if not mangas and not chapters:
         print("[System] URL kosong di config.py. Tidak ada yang diproses.")
         return
@@ -217,7 +215,7 @@ def main():
                 for b in blocks:
                     b['colors'] = ImageProcessor.detect_colors(img, b['box'])
                     
-                final_img = Typesetter.apply_text(img, blocks, font_path)
+                final_img = Typesetter.apply_text(img, blocks)
                 final_img.save(final_path, format="WEBP", quality=80)
             except Exception as e:
                 print(f"Gagal memproses typesetting halaman {idx+1}: {e}")
