@@ -13,6 +13,7 @@ from PIL import Image, ImageDraw, ImageFont
 FONT_DIR = "font"
 
 FONT_REGULAR = "digistrip.ttf"
+FONT_ITALIC = ["digistrip_i.ttf", "Roboto-Italic.ttf"] 
 FONT_BOLD = ["Komika_display_kaps_bold.ttf", "Roboto-Bold.ttf"]
 FONT_SFX = ["Houston Comics Personal Use.ttf", "Komika_display.ttf", "helsinki.ttf"]
 
@@ -75,17 +76,53 @@ class Typesetter:
         return path if os.path.exists(path) else None
 
     @staticmethod
-    def _select_font(block):
-        """Choose a font based on text characteristics.
+    def _estimate_stroke_weight(pil_img, box):
+        """
+        Mengukur ketebalan huruf asli di gambar menggunakan Distance Transform.
+        Mengembalikan rasio ketebalan garis terhadap tinggi kotak (0.0 - 0.3+).
+        """
+        try:
+            # 1. Crop area teks dari gambar asli
+            crop = pil_img.crop((
+                max(0, int(box[0])),
+                max(0, int(box[1])),
+                min(pil_img.width, int(box[2])),
+                min(pil_img.height, int(box[3]))
+            ))
+            
+            img_np = np.array(crop.convert("L"))
+            if img_np.size == 0 or img_np.shape[0] < 5 or img_np.shape[1] < 5:
+                return 0.08  # Default anggap regular
 
-        Rules
-        -----
-        * **Normal** → `digistrip.ttf`
-        * **Bold / shout** → `Komika_display_kaps_bold.ttf` (fallback
-          `Roboto-Bold.ttf`) when text is ALL CAPS, contains `!`, or the
-          estimated font size is well above the box-average.
-        * **Italic / SFX** → one of the three SFX fonts when the block is
-          flagged as a single-word SFX or angle > 10°.
+            # 2. Thresholding Otsu untuk memisahkan teks dari latar belakang
+            _, binary = cv2.threshold(img_np, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+            
+            # Jika background gelap dan teks terang, balik (invert)
+            if np.sum(binary == 255) > np.sum(binary == 0):
+                binary = cv2.bitwise_not(binary)
+
+            # 3. Gunakan Distance Transform untuk mencari ketebalan stroke huruf
+            dist = cv2.distanceTransform(binary, cv2.DIST_L2, 3)
+            
+            # Ambil rata-rata dari piksel-piksel tulang punggung huruf (nilai distance > 1)
+            stroke_pixels = dist[dist > 1.0]
+            if len(stroke_pixels) == 0:
+                return 0.08
+                
+            # Ketebalan garis = 2 * rata-rata jarak dari tepi huruf
+            avg_stroke_thickness = np.percentile(stroke_pixels, 80) * 2.0
+            box_height = img_np.shape[0]
+            
+            # Rasio ketebalan terhadap tinggi huruf
+            weight_ratio = avg_stroke_thickness / max(1, box_height)
+            return weight_ratio
+        except Exception:
+            return 0.08  # Fallback ke normal regular
+
+    @staticmethod
+    def _select_font(block, pil_img=None):
+        """
+        Memilih font berdasarkan pengukuran KETEBALAN HURUF asli pada gambar.
         """
         text = block.get("text", "")
         box = block["box"]
@@ -94,31 +131,48 @@ class Typesetter:
         words = text.split()
         is_single = len(words) <= 1
 
-        # SFX detection
-        if is_single and font_size_est > 40:
+        # 1. SFX detection (kata tunggal ukuran sangat besar)
+        if is_single and font_size_est > 45:
             for name in FONT_SFX:
                 path = Typesetter._resolve_font(name)
                 if path:
                     return path
 
-        # Bold / shout detection
+        # 2. Cek Ketebalan Huruf dari gambar asli (jika pil_img tersedia)
+        is_bold_weight = False
+        if pil_img is not None:
+            stroke_weight = Typesetter._estimate_stroke_weight(pil_img, box)
+            # Huruf komik regular umumnya punya rasio ketebalan 0.06 - 0.11
+            # Huruf bold / teriak umumnya >= 0.14
+            if stroke_weight >= 0.14:
+                is_bold_weight = True
+
+        # 3. Bold detection:
+        # Gunakan font BOLD HANYA JIKA garis huruf aslinya memang tebal,
+        # atau merupakan teks teriakan jelas (ukuran font sangat besar + tanda seru)
         has_exclamation = "!" in text
-        is_mostly_upper = sum(1 for c in text if c.isupper()) > max(3, len(text) * 0.6)
-        if has_exclamation or (is_mostly_upper and len(text) > 3):
+        if is_bold_weight or (has_exclamation and font_size_est > 38):
             for name in FONT_BOLD:
                 path = Typesetter._resolve_font(name)
                 if path:
                     return path
 
-        # Angle-based italic detection
+        # 4. Angle-based Italic vs SFX detection
         angle = abs(block.get("angle", 0.0))
         if angle > 10:
-            for name in FONT_SFX:
+            # Jika hanya 1-2 kata dan ukurannya besar -> SFX Miring
+            if is_single and font_size_est > 35:
+                for name in FONT_SFX:
+                    path = Typesetter._resolve_font(name)
+                    if path:
+                        return path
+            # Jika berupa kalimat -> Pakai Font Italic biasa (bukan font SFX)
+            for name in FONT_ITALIC:
                 path = Typesetter._resolve_font(name)
                 if path:
                     return path
 
-        # Default
+        # 5. Default -> FONT REGULAR (digistrip.ttf)
         reg = Typesetter._resolve_font(FONT_REGULAR)
         return reg if reg else None
 
@@ -325,7 +379,7 @@ class Typesetter:
             if not display_text.strip():
                 continue
 
-            font_path = Typesetter._select_font(blk)
+            font_path = Typesetter._select_font(blk, pil_img)
             if font_path is None:
                 font_path = Typesetter._resolve_font(FONT_REGULAR)
 
