@@ -75,6 +75,58 @@ class OCREngine:
 
         return text
 
+    def _read_orientation_aware(self, img_crop):
+        """Membaca teks dari crop gambar dengan mencoba 3 orientasi:
+        1. Normal
+        2. Horizontal Flip (Mirror - untuk teks hologram/cermin)
+        3. Rotate 180 derajat
+        
+        Mengembalikan (teks_terbaik, skor_terbaik, is_mirrored, is_rotated).
+        """
+        if img_crop.size == 0 or img_crop.shape[0] < 5 or img_crop.shape[1] < 5:
+            return "", 0.0, False, False
+
+        orientations = [
+            ("normal", img_crop, False, False),
+            ("mirror", cv2.flip(img_crop, 1), True, False),
+            ("rot180", cv2.rotate(img_crop, cv2.ROTATE_180), False, True)
+        ]
+
+        best_text = ""
+        best_score = -1.0
+        best_mirrored = False
+        best_rotated = False
+
+        for name, crop_img, is_mirrored, is_rotated in orientations:
+            try:
+                out = self.reader(crop_img, use_det=False, use_cls=True, use_rec=True)
+                if not out or not out[0]:
+                    continue
+                
+                rec_res = out[0]
+                if isinstance(rec_res, (list, tuple)) and len(rec_res) > 0:
+                    text, score = rec_res[0][0], float(rec_res[0][1])
+                else:
+                    continue
+
+                clean = self._clean_ocr_text(text)
+                if len(clean) < 2:
+                    continue
+
+                # Beri sedikit insentif skor pada orientasi normal agar tidak salah flip
+                if name == "normal":
+                    score *= 1.05
+
+                if score > best_score:
+                    best_score = score
+                    best_text = clean
+                    best_mirrored = is_mirrored
+                    best_rotated = is_rotated
+            except Exception:
+                continue
+
+        return best_text, best_score, best_mirrored, best_rotated
+
     def detect_and_merge(self, img_path):
         img = cv2.imread(img_path)
         if img is None:
@@ -98,7 +150,6 @@ class OCREngine:
                     boxes.append(item[0])
                     texts.append(item[1])
 
-        # Reconstruct the preprocessed image shape for coordinate scaling
         proc_h, proc_w = processed_img.shape[:2]
         orig_h, orig_w = img.shape[:2]
         scale_x = orig_w / proc_w if proc_w > 0 else 1.0
@@ -111,18 +162,26 @@ class OCREngine:
             xs = [p[0] * scale_x for p in bbox]
             ys = [p[1] * scale_y for p in bbox]
 
+            box_coords = [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))]
+            
+            # Cek orientasi teks (Normal, Mirror/Hologram, atau Rotasi 180°)
+            crop = img[box_coords[1]:box_coords[3], box_coords[0]:box_coords[2]]
+            best_text, best_score, is_mirrored, is_rotated = self._read_orientation_aware(crop)
+
+            clean_text = best_text if best_text else self._clean_ocr_text(text)
+            if not clean_text:
+                continue
+
             dx = bbox[1][0] - bbox[0][0]
             dy = bbox[1][1] - bbox[0][1]
             angle = math.degrees(math.atan2(dy, dx))
 
-            clean_text = self._clean_ocr_text(text)
-            if not clean_text:
-                continue
-
             raw_lines.append({
                 "text": clean_text,
-                "box": [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))],
-                "angle": angle
+                "box": box_coords,
+                "angle": angle,
+                "is_mirrored": is_mirrored,
+                "is_rotated": is_rotated
             })
 
         return self._merge_dialog_bubbles(raw_lines)
@@ -139,7 +198,6 @@ class OCREngine:
         ch = box[3] - box[1]
 
         # 1. CEK PERBEDAAN UKURAN FONT (SFX vs Teks Normal)
-        # Diperketat dari 2.8 menjadi 1.6 agar kata besar (SFX) tidak menyatu dengan teks kecil
         if cluster_info['max_h'] / max(1, ch) > 1.6 or ch / max(1, cluster_info['min_h']) > 1.6:
             return False
 
@@ -147,12 +205,9 @@ class OCREngine:
         avg_angle = sum(cluster_info['angles']) / len(cluster_info['angles'])
         angle_diff = abs(candidate['angle'] - avg_angle)
         
-        # Jika deviasi sudut > 10 derajat, jangan gabungkan
         if angle_diff > 10:
             return False
             
-        # Jika salah satu teks miring (> 8 derajat), syarat perbedaannya diperketat (< 6 derajat)
-        # Ini memisahkan SFX "FLASH" (miring) dari teks sistem (lurus 0 derajat)
         if (abs(candidate['angle']) > 8 or abs(avg_angle) > 8) and angle_diff > 6:
             return False
 
@@ -168,7 +223,6 @@ class OCREngine:
             else:
                 ca = (box[0] + box[2]) / 2.0
                 cc = (cbox[0] + cbox[2]) / 2.0
-                # Diperketat sedikit dari 0.35 ke 0.28 agar teks luar kotak tidak mudah masuk
                 if abs(ca - cc) < max(cw, cbw) * 0.28:
                     horizontal_ok = True
                     break
@@ -189,7 +243,6 @@ class OCREngine:
             else:
                 gap = 0
 
-            # Batas gap vertikal maksimal antar baris dialog adalah 1.3x tinggi huruf
             if gap <= max(mh * 1.3, 12) and gap >= -mh * 0.5:
                 vertical_ok = True
                 break
@@ -202,10 +255,6 @@ class OCREngine:
     def _merge_dialog_bubbles(self, lines):
         """Groups OCR text lines into dialog-bubble clusters using single-
         linkage merging with adaptive geometric criteria.
-
-        Lines are visited top-to-bottom. Each unvisited line seeds a new
-        cluster; the cluster greedily absorbs any later line that satisfies
-        `_can_merge` against the cluster's aggregate state.
         """
         if not lines:
             return []
@@ -266,11 +315,19 @@ class OCREngine:
                 avg_height = sum(l['box'][3] - l['box'][1] for l in cluster_lines) / len(cluster_lines)
                 avg_angle = sum(l['angle'] for l in cluster_lines) / len(cluster_lines)
 
+                # Tentukan apakah mayoritas baris adalah teks mirror atau rotasi
+                mirrored_count = sum(1 for l in cluster_lines if l.get('is_mirrored', False))
+                rotated_count = sum(1 for l in cluster_lines if l.get('is_rotated', False))
+                is_mirrored = mirrored_count > (len(cluster_lines) / 2)
+                is_rotated = rotated_count > (len(cluster_lines) / 2)
+
                 result.append({
                     "text": combined_text,
                     "box": [min_x, min_y, max_x, max_y],
                     "orig_line_height": avg_height,
-                    "angle": avg_angle
+                    "angle": avg_angle,
+                    "is_mirrored": is_mirrored,
+                    "is_rotated": is_rotated
                 })
 
         return result
