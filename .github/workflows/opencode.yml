@@ -1,8 +1,12 @@
-name: OpenCode Rust Migration
+name: OpenCode Fix
 
 on:
   workflow_dispatch:
 
+  push:
+    paths:
+      - "PROMPT.md"
+      
 permissions:
   contents: read
 
@@ -18,11 +22,14 @@ jobs:
         with:
           node-version: 22
 
-      # Setup Rust environment
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+      # Setup Python environment
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
 
-      # Install dependensi sistem untuk Tesseract OCR agar tidak error saat cargo check
+      # Install dependensi sistem untuk Tesseract OCR (jika masih dibutuhkan oleh Python OCR library)
       - name: Install OCR System Dependencies
         run: |
           sudo apt-get update -qq
@@ -34,24 +41,24 @@ jobs:
       - name: Check OpenCode Version
         run: opencode --version
 
-      - name: Run OpenCode with Rust Migration Prompt
+      - name: Run OpenCode with Python Prompt
         run: |
           opencode run \
             --model opencode/deepseek-v4-flash-free \
             --auto \
-            "Tolong ubah seluruh proyek manga auto translator ini (dari Python) menjadi menggunakan bahasa Rust agar prosesnya jauh lebih cepat. Pastikan menggunakan crate leptess versi 0.14 di Cargo.toml. Tolong tingkatkan juga sistem logging-nya agar lebih detail dan perbaiki logika akurasi OCR-nya." || true
-
+            "$(cat PROMPT.md)" 2>&1 | tee ai-response-recap.txt || true
+            
       - name: Collect changed files
         run: |
-          # Tambahkan semua perubahan, tapi abaikan folder target/ atau cache agar ukuran kecil
+          # Tambahkan semua perubahan ke staging git untuk dicek file apa saja yang diubah
           git add -A
 
           mkdir -p output_artifact
 
-          # Hanya copy file source code yang diubah/dibuat, abaikan folder 'target', node_modules, atau .git
+          # Hanya copy file yang diubah/dibuat, abaikan environment Python (venv), node_modules, atau cache pycache
           for file in $(git diff --cached --name-only); do
-            # Filter: lewati file jika berada di dalam folder target/ atau direktori sementara lainnya
-            if [[ "$file" == target/* ]] || [[ "$file" == .cargo/* ]] || [[ "$file" == *.lock ]]; then
+            # Filter: lewati file jika berada di dalam folder __pycache__, venv, atau file temporary
+            if [[ "$file" == *__pycache__* ]] || [[ "$file" == venv/* ]] || [[ "$file" == *.pyc ]]; then
               continue
             fi
 
@@ -61,9 +68,18 @@ jobs:
             fi
           done
 
-      - name: Upload Rust Code Artifact
+      # Upload respons AI sebagai artifact terpisah
+      - name: Upload AI Response Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: opencode-rust-result-${{ github.sha }}
+          name: ai-response-recap-${{ github.sha }}
+          path: ai-response-recap.txt
+          retention-days: 7
+
+      # Upload kode hasil perubahan
+      - name: Upload Code Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: opencode-python-result-${{ github.sha }}
           path: output_artifact/
           retention-days: 7
