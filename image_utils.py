@@ -508,22 +508,46 @@ def merge_short_images(raw_paths, target_height=2200, max_workers=6):
     return merged_paths
 
 
-def smart_slice_image(image_path, target_height=1200, out_dir="output"):
+def smart_slice_image(
+    image_path, 
+    target_height=1200, 
+    out_dir="output",
+    min_height=600, 
+    max_height=1800
+):
+    """
+    Memotong gambar manhwa panjang secara cerdas tanpa memotong balon percakapan.
+    
+    Alur pencarian area potong:
+    1. Cari area kosong (gutter) di sekitar target_height.
+    2. Jika tidak ada, cari ke atas (perkecil sampai min_height).
+    3. Jika tidak ada, cari ke bawah (perbesar maksimal sampai max_height).
+    4. Jika tetap tidak ada, potong paksa di titik dengan aktivitas visual terendah.
+    """
     img = cv2.imread(image_path)
     if img is None:
-        print(f"[Error] Tidak bisa membaca gambar {image_path}")
+        print(f"[Error] Tidak bisa membaca gambar: {image_path}")
         return [image_path]
 
     height, width = img.shape[:2]
-    if height <= target_height:
+    if height <= max_height:
         return [image_path]
 
+    # --- 1. PEMETAAN AKTIVITAS VISUAL ---
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    edges = cv2.Canny(gray, 50, 150)
-    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (30, 30))
-    dilated = cv2.dilate(edges, kernel, iterations=1)
-
-    row_density = np.sum(dilated, axis=1) / 255.0
+    
+    # Deteksi garis/tepi menggunakan Sobel & Canny gabungan
+    edges = cv2.Canny(gray, 30, 100)
+    
+    # Pengecekan standar deviasi warna per baris (mendeteksi area warna seragam/putih polos)
+    row_std = np.std(gray.astype(np.float32), axis=1)
+    
+    # Kepadatan edge per baris (0.0 sampai 1.0)
+    edge_density = np.sum(edges > 0, axis=1) / float(width)
+    
+    # Baris dianggap "KOSONG/AMAN" jika variasi warna sangat kecil dan minim garis
+    # threshold std < 3.0 dan edge_density < 0.01 sangat aman untuk gutter manhwa
+    safe_rows = (row_std < 3.5) & (edge_density < 0.015)
 
     sliced_paths = []
     y_start = 0
@@ -531,53 +555,75 @@ def smart_slice_image(image_path, target_height=1200, out_dir="output"):
     base_name = os.path.splitext(os.path.basename(image_path))[0]
     os.makedirs(out_dir, exist_ok=True)
 
+    def find_empty_gap(start_y, end_y, gap_size=20):
+        """Mencari blok baris kosong berturut-turut setinggi gap_size."""
+        start_y = max(0, int(start_y))
+        end_y = min(height, int(end_y))
+        if end_y - start_y < gap_size:
+            return None
+            
+        for y in range(end_y - gap_size, start_y, -1):
+            if np.all(safe_rows[y : y + gap_size]):
+                return y + (gap_size // 2)  # Potong di tengah-tengah gap
+        return None
+
     while y_start < height:
-        y_end = y_start + target_height
-        if y_end >= height:
-            y_end = height
-            slice_img = img[y_start:y_end, :]
+        # Jika sisa gambar ke bawah sudah lebih pendek atau sama dengan batas maksimal,
+        # langsung jadikan potongan terakhir.
+        if height - y_start <= max_height:
+            slice_img = img[y_start:height, :]
             slice_path = os.path.join(out_dir, f"{base_name}_part{part}.jpg")
             cv2.imwrite(slice_path, slice_img)
             sliced_paths.append(slice_path)
             break
 
-        gap_size = 15
-        found_safe_cut = False
-        tolerance = 0
-        max_tolerance = width * 0.10
+        y_target = min(y_start + target_height, height)
+        found_cut = None
+        gap = 25  # Butuh minimal 25px area kosong berturut-turut agar aman
 
-        while tolerance <= max_tolerance and not found_safe_cut:
-            safe_rows = row_density <= tolerance
-            search_limit_up = max(y_start + int(target_height * 0.5), y_start + gap_size)
-            for y in range(y_end, search_limit_up, -1):
-                if np.all(safe_rows[y - gap_size: y]):
-                    y_end = y - (gap_size // 2)
-                    found_safe_cut = True
-                    break
+        # --- LANGKAH 1: Cari di sekitar target_height (+/- 150px) ---
+        search_up = max(y_start + min_height, y_target - 150)
+        search_down = min(y_start + max_height, y_target + 150)
+        found_cut = find_empty_gap(search_up, search_down, gap)
 
-            if not found_safe_cut:
-                search_limit_down = min(y_start + int(target_height * 1.5), height - gap_size)
-                for y in range(y_end, search_limit_down):
-                    if np.all(safe_rows[y: y + gap_size]):
-                        y_end = y + (gap_size // 2)
-                        found_safe_cut = True
-                        break
+        # --- LANGKAH 2: Jika tidak ketemu, PERKECIL (cari ke atas sampai min_height) ---
+        if not found_cut:
+            found_cut = find_empty_gap(y_start + min_height, search_up, gap)
 
-            if not found_safe_cut:
-                if tolerance == 0:
-                    tolerance = width * 0.02
-                else:
-                    tolerance += width * 0.03
+        # --- LANGKAH 3: Jika tidak ketemu, PERBESAR (cari ke bawah sampai max_height: 1800) ---
+        if not found_cut:
+            found_cut = find_empty_gap(search_down, min(y_start + max_height, height), gap)
 
-        if not found_safe_cut:
-            print(f"[Warning] Area terlalu padat di {base_name}. Potong paksa di Y:{y_end}.")
+        # --- LANGKAH 4: POTONG PAKSA DI AREA PALING AMAN (Bukan Balon Teks/Teks) ---
+        if not found_cut:
+            print(f"[Warning] Area penuh di {base_name} (Y: {y_start}-{y_start+max_height}). Mencari titik potong paksa teraman...")
+            
+            # Kita evaluasi rentang antara target_height sampai max_height
+            force_min = min(y_start + target_height, height - 1)
+            force_max = min(y_start + max_height, height)
+            
+            # Cari baris dengan variasi warna terendah (paling rata/minim garis kontras)
+            # Menghindari memotong teks hitam di atas putih atau garis tepi balon
+            best_y = force_min
+            min_score = float('inf')
+            
+            for y in range(force_min, force_max):
+                # Skor = gabungan kepadatan tepi dan variasi warna baris
+                score = (edge_density[y] * 100) + row_std[y]
+                if score < min_score:
+                    min_score = score
+                    best_y = y
+            
+            found_cut = best_y
 
-        slice_img = img[y_start:y_end, :]
+        # Simpan potongan
+        slice_img = img[y_start:found_cut, :]
         slice_path = os.path.join(out_dir, f"{base_name}_part{part}.jpg")
         cv2.imwrite(slice_path, slice_img)
         sliced_paths.append(slice_path)
 
-        y_start = y_end
+        # Lanjut ke potongan berikutnya
+        y_start = found_cut
         part += 1
 
     return sliced_paths
