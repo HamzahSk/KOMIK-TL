@@ -155,8 +155,9 @@ class Typesetter:
     @staticmethod
     def _wrap_text_with_hyphens(words, font, max_width):
         """
-        Membungkus teks dan memotong kata yang terlalu panjang memakai '-'
-        supaya font tidak turun menjadi terlalu kecil.
+        Membungkus teks berdasarkan batas lebar nyata (max_width).
+        Jika ada kata yang melampaui lebar kotak, kata tersebut PAKSA dipenggal
+        menggunakan tanda hubung '-' agar font tidak perlu dikecilkan.
         """
         if not words:
             return []
@@ -165,13 +166,20 @@ class Typesetter:
         cur_line = []
 
         for w in words:
+            # Uji coba kalau kata dimasukkan ke baris saat ini
             test_line = " ".join(cur_line + [w]) if cur_line else w
+            
             if Typesetter._text_width(test_line, font) <= max_width:
                 cur_line.append(w)
             else:
-                # Cek apakah 1 kata w saja melebihi max_width
-                if not cur_line and Typesetter._text_width(w, font) > max_width:
-                    # Pecah kata pakai tanda hubung '-'
+                # Jika baris sudah terisi kata lain, simpan dulu baris tersebut
+                if cur_line:
+                    lines.append(" ".join(cur_line))
+                    cur_line = []
+
+                # Cek apakah 1 kata 'w' ini sendiri lebih lebar dari kotak dialog (max_width)
+                if Typesetter._text_width(w, font) > max_width:
+                    # POTONG KATA PER KARAKTER DENGAN TANDA '-'
                     part_word = ""
                     for char in w:
                         test_part = part_word + char + "-"
@@ -186,16 +194,19 @@ class Typesetter:
                     if part_word:
                         cur_line = [part_word]
                 else:
-                    if cur_line:
-                        lines.append(" ".join(cur_line))
                     cur_line = [w]
 
         if cur_line:
             lines.append(" ".join(cur_line))
+            
         return lines
 
     @staticmethod
     def _fit_font_size(text, font_path, box, max_font=140, min_font=12):
+        """
+        Mendeteksi dan menyesuaikan ukuran font secara akurat berdasarkan
+        kapasitas panjang (lebar) dan tinggi bounding box teks.
+        """
         bw = max(10, box[2] - box[0])
         bh = max(10, box[3] - box[1])
 
@@ -203,44 +214,61 @@ class Typesetter:
         if not words:
             return None, 0, min_font, ImageFont.load_default(), 0
 
+        # Gunakan 90% dari lebar & tinggi box sebagai ruang kerja aman (padding internal)
         target_w = int(bw * 0.90)
         target_h = int(bh * 0.90)
 
         best_result = None
-        lo, hi = min_font, min(max_font, int(bh * 0.85))
+        
+        # Mulai pencarian dari font kecil sampai batas ideal tinggi kotak
+        lo = min_font
+        hi = min(max_font, int(bh * 0.85))
 
         while lo <= hi:
             mid = (lo + hi) // 2
             try:
-                font = ImageFont.truetype(font_path, mid) if os.path.exists(font_path) else ImageFont.load_default()
+                font = ImageFont.truetype(font_path, mid) if font_path and os.path.exists(font_path) else ImageFont.load_default()
             except Exception:
                 font = ImageFont.load_default()
 
+            # 1. Bungkus & potong kata menggunakan tanda '-' berdasarkan target_w
             lines = Typesetter._wrap_text_with_hyphens(words, font, target_w)
             if not lines:
                 hi = mid - 1
                 continue
 
+            # 2. Hitung total tinggi yang dibutuhkan (termasuk jarak antar baris / line spacing)
             line_spacing = int(mid * 0.25)
             single_line_h = Typesetter._text_height(font)
             total_h = (len(lines) * single_line_h) + ((len(lines) - 1) * line_spacing)
+            
+            # 3. Hitung lebar baris terpanjang
             max_lw = max(Typesetter._text_width(l, font) for l in lines)
 
+            # 4. Evaluasi: Apakah teks muat di dalam target_w DAN target_h?
             if max_lw <= target_w and total_h <= target_h:
+                # Muat! Simpan sebagai kandidat terbaik, lalu coba perbesar font-nya lagi
                 best_result = (lines, total_h, mid, font, max_lw)
                 lo = mid + 1
             else:
+                # Tidak muat (kebanyakan baris/terlalu tinggi), kecilkan font-nya
                 hi = mid - 1
 
         if best_result is not None:
             return best_result
 
-        font = ImageFont.truetype(font_path, min_font) if os.path.exists(font_path) else ImageFont.load_default()
+        # Fallback darurat jika kotak terlalu kecil: gunakan ukuran font minimum (min_font)
+        try:
+            font = ImageFont.truetype(font_path, min_font) if font_path and os.path.exists(font_path) else ImageFont.load_default()
+        except Exception:
+            font = ImageFont.load_default()
+            
         lines = Typesetter._wrap_text_with_hyphens(words, font, target_w)
         single_line_h = Typesetter._text_height(font)
         line_spacing = int(min_font * 0.25)
         total_h = (len(lines) * single_line_h) + (max(0, len(lines) - 1) * line_spacing)
         max_lw = max((Typesetter._text_width(l, font) for l in lines), default=0)
+        
         return lines, total_h, min_font, font, max_lw
 
     # ------------------------------------------------------------------
