@@ -188,149 +188,143 @@ class Typesetter:
 
     @staticmethod
     def _wrap_text(words, font, max_width):
-        """Greedy line-wrap – returns list of lines (strings)."""
+        """
+        Word-wrapping yang lebih rapi dan seimbang agar teks tidak
+        terlalu kecil atau menyisakan banyak ruang kosong.
+        """
+        if not words:
+            return []
+
         lines = []
-        cur = []
+        cur_line = []
         for w in words:
-            test = " ".join(cur + [w])
-            if Typesetter._text_width(test, font) <= max_width:
-                cur.append(w)
+            test_line = " ".join(cur_line + [w])
+            if Typesetter._text_width(test_line, font) <= max_width:
+                cur_line.append(w)
             else:
-                if cur:
-                    lines.append(" ".join(cur))
-                cur = [w]
-        if cur:
-            lines.append(" ".join(cur))
+                if cur_line:
+                    lines.append(" ".join(cur_line))
+                cur_line = [w]
+        if cur_line:
+            lines.append(" ".join(cur_line))
         return lines
 
     @staticmethod
-    def _fit_font_size(text, font_path, box, max_font=160, min_font=8):
-        """Binary-search the largest font size that still fits inside `box`.
-
-        The fitting goal is 80-95 % of box width and 60-95 % of box height,
-        giving a visually balanced result.
+    def _fit_font_size(text, font_path, box, max_font=140, min_font=12):
         """
-        bw, bh = box[2] - box[0], box[3] - box[1]
-        if bw < 8 or bh < 8:
-            return None, [], 0
+        Mencari ukuran font optimal agar mengisi balon dialog dengan proporsional.
+        Mencegah teks hasil terjemahan menjadi terlalu kecil.
+        """
+        bw = max(10, box[2] - box[0])
+        bh = max(10, box[3] - box[1])
 
         words = text.split()
-        best = None
+        if not words:
+            return None, 0, min_font, ImageFont.load_default(), 0
 
-        lo, hi = min_font, min(max_font, int(bh))
+        # Gunakan margin aman agar tidak menabrak tepi balon (padding 8-10%)
+        target_w = int(bw * 0.90)
+        target_h = int(bh * 0.90)
+
+        best_result = None
+        lo, hi = min_font, min(max_font, int(bh * 0.85))
+
         while lo <= hi:
             mid = (lo + hi) // 2
-            if not os.path.exists(font_path):
+            try:
+                font = ImageFont.truetype(font_path, mid) if os.path.exists(font_path) else ImageFont.load_default()
+            except Exception:
                 font = ImageFont.load_default()
-            else:
-                font = ImageFont.truetype(font_path, mid)
 
-            lines = Typesetter._wrap_text(words, font, int(bw * 0.95))
+            lines = Typesetter._wrap_text(words, font, target_w)
             if not lines:
                 hi = mid - 1
                 continue
 
-            lh = Typesetter._text_height(font) + int(mid * 0.35)
-            total_h = len(lines) * lh
+            line_spacing = int(mid * 0.25)
+            single_line_h = Typesetter._text_height(font)
+            total_h = (len(lines) * single_line_h) + ((len(lines) - 1) * line_spacing)
             max_lw = max(Typesetter._text_width(l, font) for l in lines)
 
-            width_ok = max_lw <= bw * 0.95
-            height_ok = total_h <= bh * 0.95
-
-            if width_ok and height_ok:
-                best = (lines, total_h, mid, font, max_lw)
-                lo = mid + 1
+            # Syarat pas: Tinggi & lebar teks tidak melebihi area target_w x target_h
+            if max_lw <= target_w and total_h <= target_h:
+                best_result = (lines, total_h, mid, font, max_lw)
+                lo = mid + 1  # Coba perbesar lagi supaya lebih terbaca
             else:
-                hi = mid - 1
+                hi = mid - 1  # Terlalu besar, kecilkan
 
-        if best is not None:
-            return best
+        if best_result is not None:
+            return best_result
 
-        # Fallback: smallest possible
-        if os.path.exists(font_path):
-            font = ImageFont.truetype(font_path, min_font)
-        else:
-            font = ImageFont.load_default()
-        lines = Typesetter._wrap_text(words, font, int(bw * 0.95))
-        lh = Typesetter._text_height(font) + int(min_font * 0.35)
-        total_h = len(lines) * lh if lines else 0
+        # Fallback jika teks sangat panjang: gunakan font minimal yang masih rapi
+        font = ImageFont.truetype(font_path, min_font) if os.path.exists(font_path) else ImageFont.load_default()
+        lines = Typesetter._wrap_text(words, font, target_w)
+        single_line_h = Typesetter._text_height(font)
+        line_spacing = int(min_font * 0.25)
+        total_h = (len(lines) * single_line_h) + (max(0, len(lines) - 1) * line_spacing)
         max_lw = max((Typesetter._text_width(l, font) for l in lines), default=0)
         return lines, total_h, min_font, font, max_lw
 
     # ------------------------------------------------------------------
-    # Inpainting
+    # Inpainting - DIPERBAIKI SUPAYA TIDAK MEMBLUDER/MERUSAK GAMBAR
     # ------------------------------------------------------------------
     @staticmethod
     def _build_inpaint_mask(img_bgr, text_blocks):
-        """Generate a binary mask for text removal.
-
-        Strategy
-        --------
-        1. For each text block compute an adaptive Canny + OTSU threshold
-           fused mask inside its ROI.
-        2. Contours are filled only if their area exceeds a noise floor.
-        3. Morphological closing bridges small gaps inside characters.
-        4. A final dilation with an elliptical kernel ensures stroke
-           outlines are fully covered.
+        """
+        Membuat mask inpainting khusus pada piksel teks (huruf) saja,
+        sehingga latar belakang balon kata tidak ikut rusak/hitam.
         """
         gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
         mask = np.zeros(img_bgr.shape[:2], dtype=np.uint8)
 
         for block in text_blocks:
             box = block["box"]
-            pad = 5
+            # Batasi padding kecil saja agar tidak keluar dari balon dialog
+            pad = 4
             x1 = max(0, int(box[0]) - pad)
             y1 = max(0, int(box[1]) - pad)
             x2 = min(img_bgr.shape[1], int(box[2]) + pad)
             y2 = min(img_bgr.shape[0], int(box[3]) + pad)
 
-            if x2 - x1 < 6 or y2 - y1 < 6:
+            if (x2 - x1) < 8 or (y2 - y1) < 8:
                 continue
 
             roi = gray[y1:y2, x1:x2]
 
-            # --- Adaptive Canny based on median intensity ---
-            med = np.median(roi)
-            lower = int(max(0, 0.5 * med))
-            upper = int(min(255, 1.3 * med))
-            edges = cv2.Canny(roi, lower, upper)
-
-            # --- OTSU threshold (pick direction with more foreground) ---
+            # 1. Gunakan Thresholding Otsu untuk memisahkan teks gelap & terang
             _, th_dark = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
             _, th_light = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-            thresh = th_dark if np.sum(th_dark) > np.sum(th_light) else th_light
+            
+            # Pilih threshold yang menghasilkan piksel teks lebih masuk akal (< 45% area ROI)
+            dark_ratio = np.sum(th_dark == 255) / th_dark.size
+            light_ratio = np.sum(th_light == 255) / th_light.size
 
-            # --- Fusion ---
-            combined = cv2.bitwise_or(edges, thresh)
+            if dark_ratio < 0.45:
+                thresh = th_dark
+            elif light_ratio < 0.45:
+                thresh = th_light
+            else:
+                # Jika background kompleks, gunakan Adaptive Thresholding
+                thresh = cv2.adaptiveThreshold(
+                    roi, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+                    cv2.THRESH_BINARY_INV, 15, 4
+                )
 
-            # --- Morphological close to fill character interiors ---
-            k_close = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-            closed = cv2.morphologyEx(combined, cv2.MORPH_CLOSE, k_close, iterations=1)
+            # 2. Bersihkan noise kecil (titik/screentone luar teks)
+            kernel_clean = cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2))
+            cleaned = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel_clean)
 
-            # --- Fill significant contours only ---
-            cnts, _ = cv2.findContours(closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-            for c in cnts:
-                if cv2.contourArea(c) > 20:
-                    cv2.drawContours(closed, [c], -1, 255, -1)
+            # 3. Dilasi tipis SAJA supaya melingkupi tepi huruf tanpa melebar ke mana-mana
+            kernel_dilate = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+            dilated = cv2.dilate(cleaned, kernel_dilate, iterations=1)
 
-            # --- Adaptive dilation based on ROI dimensions ---
-            stroke_est = max(2, int(min(roi.shape) * 0.03))
-            k_dilate = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (stroke_est, stroke_est))
-            closed = cv2.dilate(closed, k_dilate, iterations=1)
-
-            mask[y1:y2, x1:x2] = cv2.bitwise_or(mask[y1:y2, x1:x2], closed)
+            mask[y1:y2, x1:x2] = cv2.bitwise_or(mask[y1:y2, x1:x2], dilated)
 
         return mask
 
-    # ------------------------------------------------------------------
-    # Main entry point
-    # ------------------------------------------------------------------
     @staticmethod
     def apply_text(pil_img, text_blocks):
-        """Pipeline: filter → inpaint → typeset."""
-        # ==============================================================
-        # 0. FILTERING – skip blocks that should be left untouched
-        # ==============================================================
+        """Pipeline: filter -> inpaint -> typeset."""
         valid = []
         for blk in text_blocks:
             box = blk["box"]
@@ -340,35 +334,30 @@ class Typesetter:
             words = blk.get("text", "").split()
             is_single = len(words) <= 1
 
-            is_sfx = is_single and font_est > 50
-            if is_sfx and angle > 5:
+            # Filter agar tidak salah deteksi gambar sebagai teks raksasa
+            if (is_single and font_est > 60 and angle > 5) or font_est > 130:
                 continue
-            if font_est > 120:
-                continue
-
             valid.append(blk)
 
         text_blocks = valid
 
-        # ==============================================================
-        # 1. INPAINTING – remove original text
-        # ==============================================================
+        # --- INPAINTING ---
         img_np = np.array(pil_img.convert("RGB"))
         img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
 
         inpaint_mask = Typesetter._build_inpaint_mask(img_bgr, text_blocks)
 
         if np.any(inpaint_mask):
-            inpainted_bgr = cv2.inpaint(img_bgr, inpaint_mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+            # Gunakan INPAINT_NS (Navier-Stokes) atau TELEA dengan radius kecil (2px)
+            # agar hasil sapuan kuasnya lebih halus dan tidak berbekas hitam
+            inpainted_bgr = cv2.inpaint(img_bgr, inpaint_mask, inpaintRadius=2, flags=cv2.INPAINT_NS)
         else:
             inpainted_bgr = img_bgr
 
         inpainted_rgb = cv2.cvtColor(inpainted_bgr, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(inpainted_rgb)
 
-        # ==============================================================
-        # 2. TYPESETTING – place translated text
-        # ==============================================================
+        # --- TYPESETTING ---
         for blk in text_blocks:
             box = blk["box"]
             bw, bh = box[2] - box[0], box[3] - box[1]
@@ -383,26 +372,22 @@ class Typesetter:
             if font_path is None:
                 font_path = Typesetter._resolve_font(FONT_REGULAR)
 
-            # --- Font-size fitting ---
             result = Typesetter._fit_font_size(display_text, font_path, box)
             if result is None:
                 continue
             lines, total_height, font_size, font, max_line_w = result
 
-            # --- Create transparent canvas ---
-            pad = max(15, int(font_size * 0.3))
+            pad = max(10, int(font_size * 0.2))
             canvas_w = bw + pad * 2
             canvas_h = bh + pad * 2
             txt_canvas = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
             txt_draw = ImageDraw.Draw(txt_canvas)
 
-            # --- Per-line stroke width ---
-            # Thin stroke for regular, thicker for SFX/Bold
             is_sfx = len(display_text.split()) <= 1 and font_size > 40
             stroke_w = max(2, int(font_size * 0.08)) if is_sfx else max(1, int(font_size * 0.05))
 
-            # --- Layout: vertically centre block ---
-            lh = Typesetter._text_height(font) + int(font_size * 0.35)
+            lh = Typesetter._text_height(font)
+            line_spacing = int(font_size * 0.25)
             current_y = (canvas_h - total_height) // 2
 
             for line in lines:
@@ -417,20 +402,17 @@ class Typesetter:
                     stroke_width=stroke_w,
                     stroke_fill=blk["colors"][1],
                 )
-                current_y += lh
+                current_y += lh + line_spacing
 
-            # --- Rotate if angled ---
             angle = blk.get("angle", 0.0)
             if abs(angle) > 3:
                 txt_canvas = txt_canvas.rotate(-angle, expand=True, resample=Image.BICUBIC)
 
-            # --- Paste onto page image ---
             paste_x = box[0] + (bw - txt_canvas.width) // 2
             paste_y = box[1] + (bh - txt_canvas.height) // 2
             pil_img.paste(txt_canvas, (paste_x, paste_y), txt_canvas)
 
         return pil_img
-
 
 # ======================================================================
 # Helper utilities (download, merge, slice) – kept largely unchanged
