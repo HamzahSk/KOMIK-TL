@@ -1,57 +1,63 @@
-# translator.py
-import time
+# translator_local.py
 import re
-import random
-import requests
-import urllib.parse
+import os
+import time
+from huggingface_hub import hf_hub_download
+from llama_cpp import Llama
 import config
 
 class AiTranslator:
     def __init__(self):
-        # Konfigurasi API Utama (Deepseek Custom Endpoint)
-        self.main_api_base = 'https://ai-seerver.vercel.app/chat/deepseek'
-        self.current_chat_id = None # Menyimpan ID sesi untuk 1 chapter
-        
-        # Konfigurasi API Fallback 1 (DeepSeek Proxy)
-        self.fallback_url = 'https://llmproxy.org/api/chat.php'
-        
-        # Konfigurasi API Fallback 2 (TheTurboChat / Gemini)
-        self.fallback_url_2 = 'https://theturbochat.com/api/chat/message'
-        
         self.MAX_CHARS = 1500
         self.SEPARATOR = '130495848'
         
         self.instruction = getattr(
             config, 
             "PROMPT_TRANSLATOR", 
-            "Terjemahkan teks komik ini ke bahasa Indonesia yang natural dan tidak kaku."
+            "You are a professional comic translator. Translate the following English comic text into natural, conversational Indonesian."
         )
         
-        # [BARU] Ambil aturan format batch dari config.py
         self.format_rules = getattr(
             config,
             "PROMPT_FORMAT_RULES",
-            "Terjemahkan teks di bawah ini dan pisahkan dengan '{separator}'."
+            "Translate each line below and separate the translated lines using strictly '{separator}' without adding extra numbering or commentary."
         )
         
-    def reset_chapter_session(self):
-        """Panggil ini setiap kali pindah chapter agar ID chat direset ke None."""
-        self.current_chat_id = None
-        print("[System] Sesi Chat ID Translator direset untuk chapter baru.")
+        # Inisialisasi model lokal LLaMA.cpp
+        self.llm = self._load_local_model()
 
-    def _get_fallback_headers(self):
-        """Membuat header dinamis dengan IP acak untuk fallback 1."""
-        ip = f"{random.randint(1, 255)}.{random.randint(0, 255)}.{random.randint(0, 255)}.{random.randint(0, 255)}"
-        return {
-            'Accept': '*/*',
-            'Content-Type': 'application/json',
-            'Origin': 'https://deep-seek.online',
-            'Referer': 'https://deep-seek.online/',
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'X-Forwarded-For': ip,
-            'X-Real-IP': ip,
-            'CF-Connecting-IP': ip
-        }
+    def _load_local_model(self):
+        """
+        Mengunduh model Qwen2.5-1.5B-Instruct GGUF secara otomatis (jika belum ada)
+        dan memuatnya ke memori CPU menggunakan llama.cpp.
+        """
+        print("[System] Memeriksa/Mengunduh model lokal Qwen2.5-1.5B-Instruct-GGUF...")
+        
+        # Repositori dan nama file model berukuran ~1B-1.5B yang sangat baik di Bahasa Indonesia
+        repo_id = "Qwen/Qwen2.5-1.5B-Instruct-GGUF"
+        filename = "qwen2.5-1.5b-instruct-q4_k_m.gguf" # Kuantisasi Q4_K_M (~1 GB RAM)
+        
+        model_path = hf_hub_download(
+            repo_id=repo_id,
+            filename=filename,
+            cache_dir="./models"
+        )
+        
+        print(f"[System] Memuat model ke llama.cpp dari: {model_path}")
+        
+        # Konfigurasi optimal untuk eksekusi CPU cepat
+        llm = Llama(
+            model_path=model_path,
+            n_ctx=2048,          # Konteks token (cukup untuk batch komik)
+            n_threads=os.cpu_count() or 4,  # Gunakan seluruh core CPU yang tersedia
+            n_batch=512,         # Batch processing prompt
+            verbose=False        # Ubah ke True jika ingin melihat log performa/kecepatan
+        )
+        return llm
+
+    def reset_chapter_session(self):
+        """Kompatibilitas dengan pipeline utama."""
+        print("[System] Reset sesi chapter (Lokal Model siap digunakan).")
 
     def _create_batches(self, texts):
         batches = []
@@ -70,187 +76,6 @@ class AiTranslator:
         if current_batch:
             batches.append(current_batch)
         return batches
-
-    # PERBAIKAN: Indentasi dimundurkan agar sejajar dengan fungsi lainnya
-    
-    def _format_batch_text(self, batch_texts):
-        rules_text = self.format_rules.format(separator=self.SEPARATOR)
-        
-        return (
-            f"INSTRUCTION: {self.instruction}\n\n"
-            f"ATURAN PENTING: {rules_text}\n\n"
-            f"TEKS SUMBER:\n\n"
-            + f"\n{self.SEPARATOR}\n".join(batch_texts)
-        )
-
-    def _fallback_translate(self, prompt_text):
-        """Metode fallback 1 menggunakan DeepSeek via llmproxy."""
-        print("[System] Memulai sesi Fallback 1 via DeepSeek...")
-        
-        payload = {
-            "messages": [{"content": prompt_text, "role": "user"}],
-            "model": "v3",
-            "stream": False,
-            "web_search": False
-        }
-
-        try:
-            response = requests.post(
-                self.fallback_url, 
-                headers=self._get_fallback_headers(), 
-                json=payload, 
-                timeout=45
-            )
-            response.raise_for_status()
-            data = response.json()
-            
-            content = data.get('content', '')
-            clean_content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL | re.IGNORECASE).strip()
-            return clean_content
-            
-        except Exception as e:
-            print(f"[Error] Fallback 1 API DeepSeek gagal: {e}")
-            return None
-
-    def _fallback_translate_2(self, prompt_text):
-        """Metode fallback 2 menggunakan Gemini via TheTurboChat."""
-        print("[System] Memulai sesi Fallback 2 via TheTurboChat (Gemini)...")
-        
-        headers = {
-            'accept': '*/*',
-            'content-type': 'application/json',
-            'origin': 'https://theturbochat.com',
-            'referer': 'https://theturbochat.com/gemini',
-            'user-agent': 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36'
-        }
-        
-        payload = {
-            "runtime": "gemini",
-            "message": prompt_text,
-            "configuration": None,
-            "history": [],
-            "language": "en",
-            "sourcePage": "/gemini"
-        }
-
-        try:
-            response = requests.post(
-                self.fallback_url_2, 
-                headers=headers, 
-                json=payload, 
-                timeout=45
-            )
-            response.raise_for_status()
-            data = response.json()
-            
-            return data.get('outputText', '')
-            
-        except Exception as e:
-            print(f"[Error] Fallback 2 API TheTurboChat gagal: {e}")
-            return None
-
-    def _verify_and_clean(self, ai_response, batch):
-        """Helper untuk mengekstrak dan memverifikasi keselarasan terjemahan."""
-        if not ai_response:
-            return None
-            
-        translations = self._extract_translations(ai_response)
-        
-        if len(translations) == len(batch):
-            return translations
-            
-        raw_lines = [line.strip() for line in ai_response.split('\n') if line.strip() and self.SEPARATOR not in line]
-        if len(raw_lines) == len(batch):
-            return [self._clean_part(l) for l in raw_lines]
-            
-        return None
-
-    def translate_batch(self, texts):
-        if not texts:
-            return []
-        
-        batches = self._create_batches(texts)
-        all_translations = []
-        
-        for batch_idx, batch in enumerate(batches):
-            print(f"\n[Batch {batch_idx+1}/{len(batches)}] Menerjemahkan {len(batch)} teks...")
-            user_message = self._format_batch_text(batch)
-            translations = []
-            
-            main_success = False
-            for attempt in range(2): # Mencoba maksimal 2 kali
-                try:
-                    # 1. Coba API Utama (Custom Deepseek Endpoint)
-                    encoded_query = urllib.parse.quote(user_message)
-                    req_url = f"{self.main_api_base}?q={encoded_query}"
-                    
-                    # Tambahkan ID jika sudah ada dari batch sebelumnya (di chapter yang sama)
-                    if self.current_chat_id:
-                        req_url += f"&id={self.current_chat_id}"
-                        
-                    response = requests.get(req_url, timeout=45)
-                    response.raise_for_status()
-                    data = response.json()
-                    
-                    if data.get('status') != 'success':
-                        raise ValueError(f"Status response API bukan success: {data}")
-                        
-                    ai_response_data = data.get('ai_response', {})
-                    if not ai_response_data.get('status'):
-                        raise ValueError(f"AI merespon dengan status false: {ai_response_data}")
-                        
-                    result_data = ai_response_data.get('data', {})
-                    ai_response_text = result_data.get('message', '')
-                    
-                    # Simpan chat_id untuk request batch berikutnya di chapter yang sama
-                    new_chat_id = result_data.get('id')
-                    if new_chat_id:
-                        self.current_chat_id = new_chat_id
-                    
-                    # Verifikasi hasil Utama
-                    translations = self._verify_and_clean(ai_response_text, batch)
-                    
-                    if translations:
-                        print(f"=== RESPON UTAMA SUKSES (Chat ID: {self.current_chat_id}) ===")
-                        main_success = True
-                        break # Jika sukses, keluar dari loop percobaan
-                    else:
-                        raise ValueError("Format teks dari API Utama berantakan.")
-                    
-                except Exception as e:
-                    print(f"[Warning] API Utama Bermasalah di percobaan {attempt + 1} ({e}).")
-                    if attempt == 0:
-                        print("Mencoba ulang API Utama sekali lagi dalam 2 detik...")
-                        time.sleep(2) # Jeda sebelum mencoba ulang
-            
-            # Jika setelah 2 kali coba masih gagal, jalankan Fallback
-            if not main_success:
-                print("[Warning] API Utama gagal setelah 2 kali percobaan. Beralih ke Fallback 1...")
-                
-                # 2. Fallback 1 (DeepSeek Proxy)
-                ai_response = self._fallback_translate(user_message)
-                translations = self._verify_and_clean(ai_response, batch)
-                
-                if translations:
-                    print("=== RESPON FALLBACK 1 SUKSES ===")
-                else:
-                    print("[Warning] Fallback 1 Gagal atau Format Berantakan. Beralih ke Fallback 2...")
-                    
-                    # 3. Fallback 2 (TheTurboChat)
-                    ai_response = self._fallback_translate_2(user_message)
-                    translations = self._verify_and_clean(ai_response, batch)
-                    
-                    if translations:
-                        print("=== RESPON FALLBACK 2 SUKSES ===")
-                    else:
-                        print("[Error] Semua API dan Fallback gagal. Menggunakan teks asli.")
-                        translations = batch
-
-            all_translations.extend(translations)
-            time.sleep(1.5)
-            
-        return all_translations
-
 
     def _clean_part(self, text):
         cleaned = text.strip()
@@ -274,3 +99,70 @@ class AiTranslator:
         lines = [line.strip() for line in response_text.split('\n') if line.strip()]
         translations = [self._clean_part(line) for line in lines]
         return translations if translations else [response_text]
+
+    def _verify_and_clean(self, ai_response, batch):
+        if not ai_response:
+            return None
+            
+        translations = self._extract_translations(ai_response)
+        
+        if len(translations) == len(batch):
+            return translations
+            
+        raw_lines = [
+            line.strip() for line in ai_response.split('\n') 
+            if line.strip() and self.SEPARATOR not in line
+        ]
+        if len(raw_lines) == len(batch):
+            return [self._clean_part(l) for l in raw_lines]
+            
+        return None
+
+    def translate_batch(self, texts):
+        if not texts:
+            return []
+        
+        batches = self._create_batches(texts)
+        all_translations = []
+        
+        for batch_idx, batch in enumerate(batches):
+            print(f"\n[Batch {batch_idx+1}/{len(batches)}] Menerjemahkan {len(batch)} teks secara lokal...")
+            
+            rules_text = self.format_rules.format(separator=self.SEPARATOR)
+            source_text_joined = f"\n{self.SEPARATOR}\n".join(batch)
+            
+            # Pengaturan prompt menggunakan System & User message standar model Instruct
+            system_prompt = f"{self.instruction}\n{rules_text}"
+            
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": f"SOURCE TEXT TO TRANSLATE:\n\n{source_text_joined}"}
+            ]
+            
+            start_time = time.time()
+            try:
+                # Inferensi menggunakan llama-cpp-python
+                response = self.llm.create_chat_completion(
+                    messages=messages,
+                    max_tokens=1024,
+                    temperature=0.3, # Rendah agar hasilnya konsisten dan mematuhi format separator
+                    top_p=0.85
+                )
+                
+                ai_response_text = response["choices"][0]["message"]["content"]
+                elapsed_time = time.time() - start_time
+                print(f"[System] Selesai dalam {elapsed_time:.2f} detik.")
+                
+                translations = self._verify_and_clean(ai_response_text, batch)
+                
+                if translations:
+                    all_translations.extend(translations)
+                else:
+                    print("[Warning] Format keluaran AI tidak selaras dengan jumlah input. Menggunakan teks asli.")
+                    all_translations.extend(batch)
+                    
+            except Exception as e:
+                print(f"[Error] Terjadi kesalahan pada proses inferensi lokal: {e}")
+                all_translations.extend(batch)
+                
+        return all_translations

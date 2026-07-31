@@ -5,3 +5,5 @@ pillow
 numpy<2
 requests
 beautifulsoup4
+llama-cpp-python
+huggingface_hub
