@@ -250,47 +250,41 @@ class Typesetter:
     def _build_inpaint_mask(img_bgr, text_blocks):
         """
         Menghapus huruf beserta stroke/drop-shadow-nya sampai bersih sempurna
-        tanpa merusak tepi luar balon kata.
+        menggunakan Canny Edge dan penambalan kontur tanpa merusak tepi luar balon kata.
         """
         gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
         mask = np.zeros(img_bgr.shape[:2], dtype=np.uint8)
 
         for block in text_blocks:
             box = block["box"]
-            # Perluas sedikit area kerja (padding 6px) supaya bayangan tidak terpotong
-            pad = 6
-            x1 = max(0, int(box[0]) - pad)
-            y1 = max(0, int(box[1]) - pad)
-            x2 = min(img_bgr.shape[1], int(box[2]) + pad)
-            y2 = min(img_bgr.shape[0], int(box[3]) + pad)
+            pad = 5
+            x1, y1 = max(0, int(box[0]) - pad), max(0, int(box[1]) - pad)
+            x2, y2 = min(img_bgr.shape[1], int(box[2]) + pad), min(img_bgr.shape[0], int(box[3]) + pad)
 
-            if (x2 - x1) < 10 or (y2 - y1) < 10:
+            if (x2 - x1) < 5 or (y2 - y1) < 5:
                 continue
 
-            roi = gray[y1:y2, x1:x2]
+            roi_gray = gray[y1:y2, x1:x2]
 
-            # 1. Gunakan Adaptive Threshold agar sensitif menangkap bayangan/garis tipis teks
-            thresh_adapt = cv2.adaptiveThreshold(
-                roi, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                cv2.THRESH_BINARY_INV, 11, 3
-            )
-            
-            # 2. Kombinasikan juga dengan Otsu biasa untuk bagian huruf yang tebal
-            _, th_dark = cv2.threshold(roi, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-            combined_thresh = cv2.bitwise_or(thresh_adapt, th_dark)
+            # 1. Cari garis tegas (huruf) menggunakan Canny Edge Detection
+            edges = cv2.Canny(roi_gray, 50, 150)
 
-            # 3. KUNCI BERSIHNYA: DILASI LEBIH KUAT (5x5, 2 iterasi)
-            # Ini akan menelan seluruh stroke putih/abu-abu di sekitar huruf asli
-            kernel_dilate = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
-            dilated = cv2.dilate(combined_thresh, kernel_dilate, iterations=2)
+            # 2. Tebalkan garis tersebut agar outline (stroke) putih/shadow ikut tertutup
+            kernel = np.ones((5, 5), np.uint8)
+            dilated = cv2.dilate(edges, kernel, iterations=2)
 
+            # 3. Isi lubang di dalam huruf (seperti bagian dalam huruf O, A, P, D, dll)
+            contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            cv2.drawContours(dilated, contours, -1, 255, -1)
+
+            # Tempelkan bentuk persis hurufnya ke mask utama
             mask[y1:y2, x1:x2] = cv2.bitwise_or(mask[y1:y2, x1:x2], dilated)
 
         return mask
 
     @staticmethod
     def apply_text(pil_img, text_blocks):
-        """Pipeline: filter -> inpaint (super bersih) -> typeset."""
+        """Pipeline: filter -> inpaint -> typeset."""
         valid = []
         for blk in text_blocks:
             box = blk["box"]
@@ -306,19 +300,15 @@ class Typesetter:
 
         text_blocks = valid
 
-        # --- INPAINTING ---
+        # --- INPAINTING (DIPERBAIKI) ---
         img_np = np.array(pil_img.convert("RGB"))
         img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
 
         inpaint_mask = Typesetter._build_inpaint_mask(img_bgr, text_blocks)
 
         if np.any(inpaint_mask):
-            # INPAINT_TELEA dengan radius 5 px menambal area bekas huruf dengan sangat mulus
-            inpainted_bgr = cv2.inpaint(img_bgr, inpaint_mask, inpaintRadius=5, flags=cv2.INPAINT_TELEA)
-            
-            # Tambahan penghalusan ringan pada area teks saja agar teksturnya rata
-            smooth_bgr = cv2.bilateralFilter(inpainted_bgr, 5, 40, 40)
-            inpainted_bgr = np.where(inpaint_mask[:, :, None] > 0, smooth_bgr, inpainted_bgr)
+            # Menggunakan INPAINT_NS dengan radius 4 px agar sapuan penambalan mulus
+            inpainted_bgr = cv2.inpaint(img_bgr, inpaint_mask, inpaintRadius=4, flags=cv2.INPAINT_NS)
         else:
             inpainted_bgr = img_bgr
 
@@ -381,8 +371,6 @@ class Typesetter:
             pil_img.paste(txt_canvas, (paste_x, paste_y), txt_canvas)
 
         return pil_img
-
-
 # ======================================================================
 # Helper utilities (download, merge, slice) – kept largely unchanged
 # ======================================================================
