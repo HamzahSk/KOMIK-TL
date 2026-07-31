@@ -3,3 +3,19 @@
 
 !chmod +x build.sh
 !./build.sh
+
+curl https://api.bluesminds.com/v1/chat/completions \
+  -H "Authorization: Bearer sk-zJct6jIkvGNYSMyK9ETsitpaBa3DE23ftQI5n4VgQmYEKxWh" \
+  -H "Content-Type: application/json" \
+  -d '{
+       "model": "gpt-5-mini",
+       "messages": [
+         {
+           "role": "user",
+           "content": "Explain quantum entanglement in one paragraph."
+         }
+       ],
+       "temperature": 0.7
+     }'
+     
+     {"id":"chatcmpl-E7XFZDaEyzCJUko8FRxIqq413WyeW","created":1785464817,"model":"gpt-5-mini","object":"chat.completion","choices":[{"finish_reason":"stop","index":0,"message":{"content":"Quantum entanglement is a quantum phenomenon in which two or more particles share a single, inseparable quantum state so that the outcomes of measurements on each particle are strongly correlated in ways that cannot be explained by assigning independent properties to each one. When you measure one entangled particle, the statistical description of the joint system changes and the other particle’s measurement outcomes become immediately correlated with that result, a behavior verified by violations of Bell inequalities that rule out simple local-hidden-variable explanations. Although these correlations appear \"instantaneous,\" they cannot be used to send information faster than light because the individual outcomes are random until compared, and entanglement is fragile—interactions with the environment (decoherence) destroy it—yet it is harnessed for technologies like quantum computing, quantum cryptography, and quantum teleportation.","role":"assistant","provider_specific_fields":{"refusal":null},"annotations":[]},"provider_specific_fields":{"content_filter_results":{"hate":{"filtered":false,"severity":"safe"},"protected_material_code":{"detected":false,"filtered":false},"protected_material_text":{"detected":false,"filtered":false},"self_harm":{"filtered":false,"severity":"safe"},"sexual":{"filtered":false,"severity":"safe"},"violence":{"filtered":false,"severity":"safe"}}}}],"usage":{"completion_tokens":428,"prompt_tokens":15,"total_tokens":443,"completion_tokens_details":{"accepted_prediction_tokens":0,"audio_tokens":0,"reasoning_tokens":256,"rejected_prediction_tokens":0},"prompt_tokens_details":{"audio_tokens":0,"cached_tokens":0},"latency_checkpoint":{"engine_tbt_ms":7,"engine_ttft_ms":33,"engine_ttlt_ms":3242,"pre_inference_ms":173,"service_tbt_ms":7,"service_ttft_ms":581,"service_ttlt_ms":3784,"total_duration_ms":3621,"user_visible_ttft_ms":408}},"service_tier":"default","prompt_filter_results":[{"prompt_index":0,"content_filter_results":{"hate":{"filtered":false,"severity":"safe"},"jailbreak":{"detected":false,"filtered":false},"self_harm":{"filtered":false,"severity":"safe"},"sexual":{"filtered":false,"severity":"safe"},"violence":{"f~ $
