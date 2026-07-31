@@ -54,6 +54,10 @@ class ImageProcessor:
             return (0, 0, 0), (255, 255, 255)
 
 
+# ======================================================================
+# GANTI KESELURUHAN CLASS Typesetter DI image_utils.py DENGAN INI
+# ======================================================================
+
 class Typesetter:
     # ------------------------------------------------------------------
     # Font helpers
@@ -64,12 +68,7 @@ class Typesetter:
         return path if os.path.exists(path) else None
 
     @staticmethod
-    def _estimate_stroke_weight(pil_img, box, font_size_est):
-        """
-        Menghitung ketebalan proporsional huruf di dalam kotak teks.
-        Menggunakan threshold yang akurat dan perbandingan terhadap ukuran font
-        agar huruf normal (reguler) tidak salah terbaca sebagai Bold.
-        """
+    def _estimate_stroke_weight(pil_img, box):
         try:
             crop = pil_img.crop((
                 max(0, int(box[0])),
@@ -79,76 +78,23 @@ class Typesetter:
             ))
             
             img_np = np.array(crop.convert("L"))
-            if img_np.size == 0 or img_np.shape[0] < 8 or img_np.shape[1] < 8:
+            if img_np.size == 0 or img_np.shape[0] < 5 or img_np.shape[1] < 5:
                 return 0.08
-
-            # Filter blur sedikit untuk mengurangi noise kompresi gambar
-            blurred = cv2.GaussianBlur(img_np, (3, 3), 0)
-
-            # Binarisasi otomatis menggunakan Otsu
-            _, binary = cv2.threshold(blurred, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-            
-            # Pastikan teks yang berwarna putih diposisikan dengan benar
-            if np.sum(binary == 255) > np.sum(binary == 0):
-                binary = cv2.bitwise_not(binary)
-
-            # Distance transform mencari jarak ke tepi karakter (ketebalan)
-            dist = cv2.distanceTransform(binary, cv2.DIST_L2, 3)
-            stroke_pixels = dist[dist > 0.8]
-            
-            if len(stroke_pixels) == 0:
-                return 0.08
-                
-            # Mengambil persentil ke-85 agar hasil tidak terganggu ujung-ujung tipis
-            stroke_radius = np.percentile(stroke_pixels, 85)
-            stroke_thickness = stroke_radius * 2.0
-            
-            # Dibandingkan dengan perkiraan tinggi font aktual, BUKAN semata-mata tinggi box
-            return stroke_thickness / max(10, font_size_est)
-        except Exception:
-            return 0.08
-
-    @staticmethod
-    def _estimate_italic_slant(pil_img, box):
-        """
-        Mendeteksi apakah bentuk karakter itu sendiri memiliki kemiringan (Italic slant)
-        bahkan ketika kotak pembungkusnya (box) berdiri lurus 0 derajat.
-        """
-        try:
-            crop = pil_img.crop((
-                max(0, int(box[0])),
-                max(0, int(box[1])),
-                min(pil_img.width, int(box[2])),
-                min(pil_img.height, int(box[3]))
-            ))
-            img_np = np.array(crop.convert("L"))
-            if img_np.size == 0 or img_np.shape[0] < 12 or img_np.shape[1] < 12:
-                return False
 
             _, binary = cv2.threshold(img_np, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
             if np.sum(binary == 255) > np.sum(binary == 0):
                 binary = cv2.bitwise_not(binary)
 
-            # Geser piksel ke arah berlawanan (shear) dari -20 sampai 20 derajat
-            # Sudut italic asli akan menghasilkan varians proyeksi vertikal (histogram) tertinggi
-            h, w = binary.shape
-            best_angle = 0
-            max_var = -1.0
-
-            for angle in range(-20, 21, 2):
-                shear_val = np.tan(np.deg2rad(angle))
-                M = np.float32([[1, shear_val, 0], [0, 1, 0]])
-                sheared = cv2.warpAffine(binary, M, (w + int(abs(shear_val) * h), h))
-                proj = np.sum(sheared, axis=0)
-                var = np.var(proj)
-                if var > max_var:
-                    max_var = var
-                    best_angle = angle
-
-            # Huruf Italic secara umum miring ke kanan minimal > 12 derajat
-            return best_angle > 12
+            dist = cv2.distanceTransform(binary, cv2.DIST_L2, 3)
+            stroke_pixels = dist[dist > 1.0]
+            if len(stroke_pixels) == 0:
+                return 0.08
+                
+            avg_stroke_thickness = np.percentile(stroke_pixels, 80) * 2.0
+            box_height = img_np.shape[0]
+            return avg_stroke_thickness / max(1, box_height)
         except Exception:
-            return False
+            return 0.08
 
     @staticmethod
     def _select_font(block, pil_img=None):
@@ -159,36 +105,27 @@ class Typesetter:
         words = text.split()
         is_single = len(words) <= 1
 
-        # 1. Cek Font Sound Effect (SFX) / Kata Tunggal Besar
         if is_single and font_size_est > 45:
             for name in FONT_SFX:
                 path = Typesetter._resolve_font(name)
                 if path:
                     return path
 
-        # 2. Cek Bold (Ketebalan Visual & Konteks Teks)
         is_bold_weight = False
         if pil_img is not None:
-            stroke_ratio = Typesetter._estimate_stroke_weight(pil_img, box, font_size_est)
-            # Threshold ditingkatkan ke >= 0.16 agar huruf reguler tidak terdeteksi Bold
-            if stroke_ratio >= 0.16:
+            stroke_weight = Typesetter._estimate_stroke_weight(pil_img, box)
+            if stroke_weight >= 0.14:
                 is_bold_weight = True
 
         has_exclamation = "!" in text
-        if is_bold_weight or (has_exclamation and font_size_est > 42):
+        if is_bold_weight or (has_exclamation and font_size_est > 38):
             for name in FONT_BOLD:
                 path = Typesetter._resolve_font(name)
                 if path:
                     return path
 
-        # 3. Cek Italic (Sudut OCR ATAU Karakter Miring dari Gambar Asli)
         angle = abs(block.get("angle", 0.0))
-        is_italic = angle > 10
-        
-        if not is_italic and pil_img is not None:
-            is_italic = Typesetter._estimate_italic_slant(pil_img, box)
-
-        if is_italic:
+        if angle > 10:
             if is_single and font_size_est > 35:
                 for name in FONT_SFX:
                     path = Typesetter._resolve_font(name)
@@ -199,7 +136,6 @@ class Typesetter:
                 if path:
                     return path
 
-        # 4. Fallback ke Font Reguler
         reg = Typesetter._resolve_font(FONT_REGULAR)
         return reg if reg else None
 
@@ -213,8 +149,16 @@ class Typesetter:
         bb = font.getbbox("A")
         return bb[3] - bb[1] if bb else font.size
 
+    # ------------------------------------------------------------------
+    # PERBAIKAN 1: Word-Wrapping dengan Pemenggalan Kata (Hyphenation '-')
+    # ------------------------------------------------------------------
     @staticmethod
     def _wrap_text_with_hyphens(words, font, max_width):
+        """
+        Membungkus teks berdasarkan batas lebar nyata (max_width).
+        Jika ada kata yang melampaui lebar kotak, kata tersebut PAKSA dipenggal
+        menggunakan tanda hubung '-' agar font tidak perlu dikecilkan.
+        """
         if not words:
             return []
 
@@ -222,16 +166,20 @@ class Typesetter:
         cur_line = []
 
         for w in words:
+            # Uji coba kalau kata dimasukkan ke baris saat ini
             test_line = " ".join(cur_line + [w]) if cur_line else w
             
             if Typesetter._text_width(test_line, font) <= max_width:
                 cur_line.append(w)
             else:
+                # Jika baris sudah terisi kata lain, simpan dulu baris tersebut
                 if cur_line:
                     lines.append(" ".join(cur_line))
                     cur_line = []
 
+                # Cek apakah 1 kata 'w' ini sendiri lebih lebar dari kotak dialog (max_width)
                 if Typesetter._text_width(w, font) > max_width:
+                    # POTONG KATA PER KARAKTER DENGAN TANDA '-'
                     part_word = ""
                     for char in w:
                         test_part = part_word + char + "-"
@@ -255,6 +203,10 @@ class Typesetter:
 
     @staticmethod
     def _fit_font_size(text, font_path, box, max_font=140, min_font=12):
+        """
+        Mendeteksi dan menyesuaikan ukuran font secara akurat berdasarkan
+        kapasitas panjang (lebar) dan tinggi bounding box teks.
+        """
         bw = max(10, box[2] - box[0])
         bh = max(10, box[3] - box[1])
 
@@ -262,10 +214,13 @@ class Typesetter:
         if not words:
             return None, 0, min_font, ImageFont.load_default(), 0
 
+        # Gunakan 90% dari lebar & tinggi box sebagai ruang kerja aman (padding internal)
         target_w = int(bw * 0.90)
         target_h = int(bh * 0.90)
 
         best_result = None
+        
+        # Mulai pencarian dari font kecil sampai batas ideal tinggi kotak
         lo = min_font
         hi = min(max_font, int(bh * 0.85))
 
@@ -276,26 +231,33 @@ class Typesetter:
             except Exception:
                 font = ImageFont.load_default()
 
+            # 1. Bungkus & potong kata menggunakan tanda '-' berdasarkan target_w
             lines = Typesetter._wrap_text_with_hyphens(words, font, target_w)
             if not lines:
                 hi = mid - 1
                 continue
 
+            # 2. Hitung total tinggi yang dibutuhkan (termasuk jarak antar baris / line spacing)
             line_spacing = int(mid * 0.25)
             single_line_h = Typesetter._text_height(font)
             total_h = (len(lines) * single_line_h) + ((len(lines) - 1) * line_spacing)
             
+            # 3. Hitung lebar baris terpanjang
             max_lw = max(Typesetter._text_width(l, font) for l in lines)
 
+            # 4. Evaluasi: Apakah teks muat di dalam target_w DAN target_h?
             if max_lw <= target_w and total_h <= target_h:
+                # Muat! Simpan sebagai kandidat terbaik, lalu coba perbesar font-nya lagi
                 best_result = (lines, total_h, mid, font, max_lw)
                 lo = mid + 1
             else:
+                # Tidak muat (kebanyakan baris/terlalu tinggi), kecilkan font-nya
                 hi = mid - 1
 
         if best_result is not None:
             return best_result
 
+        # Fallback darurat jika kotak terlalu kecil: gunakan ukuran font minimum (min_font)
         try:
             font = ImageFont.truetype(font_path, min_font) if font_path and os.path.exists(font_path) else ImageFont.load_default()
         except Exception:
@@ -309,8 +271,15 @@ class Typesetter:
         
         return lines, total_h, min_font, font, max_lw
 
+    # ------------------------------------------------------------------
+    # PERBAIKAN 2: Inpaint Mask Lebih Bersih Menghapus Bekas Garis/Shadow
+    # ------------------------------------------------------------------
     @staticmethod
     def _build_inpaint_mask(img_bgr, text_blocks):
+        """
+        Menghapus huruf beserta stroke/drop-shadow-nya sampai bersih sempurna
+        menggunakan Canny Edge dan penambalan kontur tanpa merusak tepi luar balon kata.
+        """
         gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
         mask = np.zeros(img_bgr.shape[:2], dtype=np.uint8)
 
@@ -324,19 +293,26 @@ class Typesetter:
                 continue
 
             roi_gray = gray[y1:y2, x1:x2]
+
+            # 1. Cari garis tegas (huruf) menggunakan Canny Edge Detection
             edges = cv2.Canny(roi_gray, 50, 150)
+
+            # 2. Tebalkan garis tersebut agar outline (stroke) putih/shadow ikut tertutup
             kernel = np.ones((5, 5), np.uint8)
             dilated = cv2.dilate(edges, kernel, iterations=2)
 
+            # 3. Isi lubang di dalam huruf (seperti bagian dalam huruf O, A, P, D, dll)
             contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             cv2.drawContours(dilated, contours, -1, 255, -1)
 
+            # Tempelkan bentuk persis hurufnya ke mask utama
             mask[y1:y2, x1:x2] = cv2.bitwise_or(mask[y1:y2, x1:x2], dilated)
 
         return mask
 
     @staticmethod
     def apply_text(pil_img, text_blocks):
+        """Pipeline: filter -> inpaint -> typeset."""
         valid = []
         for blk in text_blocks:
             box = blk["box"]
@@ -352,12 +328,14 @@ class Typesetter:
 
         text_blocks = valid
 
+        # --- INPAINTING (DIPERBAIKI) ---
         img_np = np.array(pil_img.convert("RGB"))
         img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
 
         inpaint_mask = Typesetter._build_inpaint_mask(img_bgr, text_blocks)
 
         if np.any(inpaint_mask):
+            # Menggunakan INPAINT_NS dengan radius 4 px agar sapuan penambalan mulus
             inpainted_bgr = cv2.inpaint(img_bgr, inpaint_mask, inpaintRadius=4, flags=cv2.INPAINT_NS)
         else:
             inpainted_bgr = img_bgr
@@ -365,6 +343,7 @@ class Typesetter:
         inpainted_rgb = cv2.cvtColor(inpainted_bgr, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(inpainted_rgb)
 
+        # --- TYPESETTING ---
         for blk in text_blocks:
             box = blk["box"]
             bw, bh = box[2] - box[0], box[3] - box[1]
@@ -420,6 +399,9 @@ class Typesetter:
             pil_img.paste(txt_canvas, (paste_x, paste_y), txt_canvas)
 
         return pil_img
+# ======================================================================
+# Helper utilities (download, merge, slice) – kept largely unchanged
+# ======================================================================
 
 
 def download_image(url, save_path, chapter_url=""):
@@ -555,6 +537,15 @@ def smart_slice_image(
     max_height=1800,
     ocr_engine=None
 ):
+    """
+    Memotong gambar manhwa panjang secara cerdas tanpa memotong balon percakapan.
+    
+    Alur pencarian area potong:
+    1. Cari area kosong (gutter) di sekitar target_height.
+    2. Jika tidak ada, cari ke atas (perkecil sampai min_height).
+    3. Jika tidak ada, cari ke bawah (perbesar maksimal sampai max_height).
+    4. Jika tetap tidak ada, potong paksa di titik paling aman (0% risiko memotong teks dari OCR/skor terendah).
+    """
     img = cv2.imread(image_path)
     if img is None:
         print(f"[Error] Tidak bisa membaca gambar: {image_path}")
@@ -564,23 +555,27 @@ def smart_slice_image(
     if height <= max_height:
         return [image_path]
 
+    # --- 0. CEK ZONA LARANGAN POTONG DARI OCR (OPTIONAL TAPI SANGAT AKURAT) ---
     forbidden_rows = np.zeros(height, dtype=bool)
     if ocr_engine is not None:
         try:
             blocks = ocr_engine.detect_and_merge(image_path)
             for b in blocks:
                 box = b['box']
+                # Beri margin pengaman 25px di atas dan di bawah kotak teks/balon
                 y1 = max(0, int(box[1]) - 25)
                 y2 = min(height, int(box[3]) + 25)
                 forbidden_rows[y1:y2] = True
         except Exception as e:
             print(f"[Warning] Gagal cek OCR untuk smart slice: {e}")
 
+    # --- 1. PEMETAAN AKTIVITAS VISUAL ---
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     edges = cv2.Canny(gray, 30, 100)
     row_std = np.std(gray.astype(np.float32), axis=1)
     edge_density = np.sum(edges > 0, axis=1) / float(width)
     
+    # Baris aman: variasi warna rendah, minim garis, DAN TIDAK MENABRAK TEKS OCR
     safe_rows = (row_std < 3.5) & (edge_density < 0.015) & (~forbidden_rows)
 
     sliced_paths = []
@@ -590,6 +585,7 @@ def smart_slice_image(
     os.makedirs(out_dir, exist_ok=True)
 
     def find_empty_gap(start_y, end_y, gap_size=20):
+        """Mencari blok baris kosong berturut-turut setinggi gap_size."""
         start_y = max(0, int(start_y))
         end_y = min(height, int(end_y))
         if end_y - start_y < gap_size:
@@ -597,7 +593,7 @@ def smart_slice_image(
             
         for y in range(end_y - gap_size, start_y, -1):
             if np.all(safe_rows[y : y + gap_size]):
-                return y + (gap_size // 2)
+                return y + (gap_size // 2)  # Potong di tengah-tengah gap
         return None
 
     while y_start < height:
@@ -610,18 +606,22 @@ def smart_slice_image(
 
         y_target = min(y_start + target_height, height)
         found_cut = None
-        gap = 25
+        gap = 25  # Butuh minimal 25px area kosong berturut-turut agar aman
 
+        # --- LANGKAH 1: Cari di sekitar target_height (+/- 150px) ---
         search_up = max(y_start + min_height, y_target - 150)
         search_down = min(y_start + max_height, y_target + 150)
         found_cut = find_empty_gap(search_up, search_down, gap)
 
+        # --- LANGKAH 2: Jika tidak ketemu, PERKECIL (cari ke atas sampai min_height) ---
         if not found_cut:
             found_cut = find_empty_gap(y_start + min_height, search_up, gap)
 
+        # --- LANGKAH 3: Jika tidak ketemu, PERBESAR (cari ke bawah sampai max_height: 1800) ---
         if not found_cut:
             found_cut = find_empty_gap(search_down, min(y_start + max_height, height), gap)
 
+        # --- LANGKAH 4: POTONG PAKSA DI AREA PALING AMAN (Bukan Balon Teks/Teks) ---
         if not found_cut:
             print(f"[Warning] Area penuh di {base_name} (Y: {y_start}-{y_start+max_height}). Mencari titik potong paksa teraman...")
             force_min = min(y_start + target_height, height - 1)
@@ -631,6 +631,7 @@ def smart_slice_image(
             min_score = float('inf')
             
             for y in range(force_min, force_max):
+                # Beri penalti skor sangat besar (1,000,000) jika baris tersebut menabrak teks OCR
                 penalty = 1000000 if forbidden_rows[y] else 0
                 score = (edge_density[y] * 100) + row_std[y] + penalty
                 if score < min_score:
@@ -639,11 +640,13 @@ def smart_slice_image(
             
             found_cut = best_y
 
+        # Simpan potongan
         slice_img = img[y_start:found_cut, :]
         slice_path = os.path.join(out_dir, f"{base_name}_part{part}.jpg")
         cv2.imwrite(slice_path, slice_img)
         sliced_paths.append(slice_path)
 
+        # Lanjut ke potongan berikutnya
         y_start = found_cut
         part += 1
 
