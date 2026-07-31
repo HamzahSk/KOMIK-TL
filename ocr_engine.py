@@ -113,10 +113,7 @@ class OCREngine:
                 if len(clean) < 2:
                     continue
 
-                # Beri sedikit insentif skor pada orientasi normal agar tidak salah flip
-                if name == "normal":
-                    score *= 1.05
-
+                # --- PERBAIKAN: Hapus score *= 1.05 agar mirror bisa menang adil ---
                 if score > best_score:
                     best_score = score
                     best_text = clean
@@ -159,14 +156,22 @@ class OCREngine:
             if bbox is None or len(bbox) < 4:
                 continue
 
+            # --- PERBAIKAN: Potong dari processed_img (yang sudah tajam) dengan padding 6px ---
+            pad = 6
+            proc_xs = [p[0] for p in bbox]
+            proc_ys = [p[1] for p in bbox]
+            py1 = max(0, int(min(proc_ys)) - pad)
+            py2 = min(proc_h, int(max(proc_ys)) + pad)
+            px1 = max(0, int(min(proc_xs)) - pad)
+            px2 = min(proc_w, int(max(proc_xs)) + pad)
+            
+            crop = processed_img[py1:py2, px1:px2]
+            best_text, best_score, is_mirrored, is_rotated = self._read_orientation_aware(crop)
+
+            # Koordinat asli untuk digambar di halaman webtoon
             xs = [p[0] * scale_x for p in bbox]
             ys = [p[1] * scale_y for p in bbox]
-
             box_coords = [int(min(xs)), int(min(ys)), int(max(xs)), int(max(ys))]
-            
-            # Cek orientasi teks (Normal, Mirror/Hologram, atau Rotasi 180°)
-            crop = img[box_coords[1]:box_coords[3], box_coords[0]:box_coords[2]]
-            best_text, best_score, is_mirrored, is_rotated = self._read_orientation_aware(crop)
 
             clean_text = best_text if best_text else self._clean_ocr_text(text)
             if not clean_text:
