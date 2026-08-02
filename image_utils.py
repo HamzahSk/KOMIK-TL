@@ -68,6 +68,49 @@ class Typesetter:
         return path if os.path.exists(path) else None
 
     @staticmethod
+    def _is_italic_slant(pil_img, box):
+        """
+        Mendeteksi apakah huruf di dalam bounding box miring ke kanan (Italic/Slant)
+        dengan menganalisis pergeseran pusat massa piksel dari baris atas ke baris bawah.
+        """
+        try:
+            crop = pil_img.crop((
+                max(0, int(box[0])),
+                max(0, int(box[1])),
+                min(pil_img.width, int(box[2])),
+                min(pil_img.height, int(box[3]))
+            ))
+            img_np = np.array(crop.convert("L"))
+            if img_np.size == 0 or img_np.shape[0] < 10 or img_np.shape[1] < 10:
+                return False
+
+            _, binary = cv2.threshold(img_np, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+            if np.sum(binary == 255) > np.sum(binary == 0):
+                binary = cv2.bitwise_not(binary)
+
+            h, w = binary.shape
+            # Ambil bagian 25% atas dan 25% bawah dari teks
+            top_part = binary[0 : int(h * 0.25), :]
+            bottom_part = binary[int(h * 0.75) : h, :]
+
+            # Hitung pusat massa (center of mass) horizontal (sumbu X)
+            top_coords = np.where(top_part > 0)[1]
+            bottom_coords = np.where(bottom_part > 0)[1]
+
+            if len(top_coords) == 0 or len(bottom_coords) == 0:
+                return False
+
+            top_mean = np.mean(top_coords)
+            bottom_mean = np.mean(bottom_coords)
+
+            # Pada font Italic, bagian atas huruf bergeser lebih ke kanan dibanding bagian bawah
+            # Rasio pergeseran > 4% dari lebar box menandakan teks tersebut Italic
+            slant_ratio = (top_mean - bottom_mean) / max(1, w)
+            return slant_ratio > 0.04
+        except Exception:
+            return False
+
+    @staticmethod
     def _estimate_stroke_weight(pil_img, box):
         try:
             crop = pil_img.crop((
@@ -105,27 +148,20 @@ class Typesetter:
         words = text.split()
         is_single = len(words) <= 1
 
+        # 1. Cek SFX / Kata tunggal berukuran besar
         if is_single and font_size_est > 45:
             for name in FONT_SFX:
                 path = Typesetter._resolve_font(name)
                 if path:
                     return path
 
-        is_bold_weight = False
-        if pil_img is not None:
-            stroke_weight = Typesetter._estimate_stroke_weight(pil_img, box)
-            if stroke_weight >= 0.14:
-                is_bold_weight = True
-
-        has_exclamation = "!" in text
-        if is_bold_weight or (has_exclamation and font_size_est > 38):
-            for name in FONT_BOLD:
-                path = Typesetter._resolve_font(name)
-                if path:
-                    return path
-
+        # 2. CEK ITALIC TERLEBIH DAHULU (Kemiringan kotak > 6 derajat ATAU bentuk huruf miring)
         angle = abs(block.get("angle", 0.0))
-        if angle > 10:
+        is_italic = angle > 6.0
+        if not is_italic and pil_img is not None:
+            is_italic = Typesetter._is_italic_slant(pil_img, box)
+
+        if is_italic:
             if is_single and font_size_est > 35:
                 for name in FONT_SFX:
                     path = Typesetter._resolve_font(name)
@@ -136,8 +172,24 @@ class Typesetter:
                 if path:
                     return path
 
+        # 3. CEK BOLD (Threshold dinaikkan ke >= 0.17 agar tidak mudah terpicu teks biasa)
+        is_bold_weight = False
+        if pil_img is not None:
+            stroke_weight = Typesetter._estimate_stroke_weight(pil_img, box)
+            if stroke_weight >= 0.17:
+                is_bold_weight = True
+
+        has_exclamation = "!" in text
+        if is_bold_weight or (has_exclamation and font_size_est > 38):
+            for name in FONT_BOLD:
+                path = Typesetter._resolve_font(name)
+                if path:
+                    return path
+
+        # 4. Fallback ke Regular
         reg = Typesetter._resolve_font(FONT_REGULAR)
         return reg if reg else None
+
 
     @staticmethod
     def _text_width(text, font):

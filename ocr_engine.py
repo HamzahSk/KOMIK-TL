@@ -153,7 +153,7 @@ class OCREngine:
             
         # Jika salah satu teks miring (> 8 derajat), syarat perbedaannya diperketat (< 6 derajat)
         # Ini memisahkan SFX "FLASH" (miring) dari teks sistem (lurus 0 derajat)
-        if (abs(candidate['angle']) > 8 or abs(avg_angle) > 8) and angle_diff > 6:
+        if (abs(candidate['angle']) > 5 or abs(avg_angle) > 5) and angle_diff > 4:
             return False
 
         # 3. CEK TUMPANG TINDIH HORIZONTAL
