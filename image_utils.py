@@ -68,10 +68,40 @@ class Typesetter:
         return path if os.path.exists(path) else None
 
     @staticmethod
+    def _detect_alignment(block):
+        """
+        Mendeteksi jenis perataan teks dengan mengukur standar deviasi
+        relatif terhadap lebar kotak, sehingga aman untuk resolusi gambar apa pun.
+        """
+        lines_info = block.get("lines_info", [])
+        if len(lines_info) <= 1:
+            return "center"
+
+        x_lefts = [l["box"][0] for l in lines_info]
+        x_rights = [l["box"][2] for l in lines_info]
+
+        box = block.get("box", [0, 0, 1, 1])
+        bw = max(1, box[2] - box[0])
+
+        # Hitung standar deviasi relatif terhadap lebar blok teks
+        norm_std_left = np.std(x_lefts) / bw
+        norm_std_right = np.std(x_rights) / bw
+
+        # Default komik adalah rata tengah (Center).
+        # Hanya ubah ke Kiri/Kanan jika benar-benar rata secara ekstrem di satu sisi saja.
+        if norm_std_left < 0.05 and norm_std_right > 0.08:
+            return "left"
+        elif norm_std_right < 0.05 and norm_std_left > 0.08:
+            return "right"
+        elif norm_std_left < 0.04 and norm_std_right < 0.04:
+            return "justify"
+        else:
+            return "center"
+
+    @staticmethod
     def _is_italic_slant(pil_img, box):
         """
-        Mendeteksi apakah huruf di dalam bounding box miring ke kanan (Italic/Slant)
-        dengan menganalisis pergeseran pusat massa piksel dari baris atas ke baris bawah.
+        Mendeteksi kemiringan huruf setelah membersihkan noise background (screentone).
         """
         try:
             crop = pil_img.crop((
@@ -84,13 +114,16 @@ class Typesetter:
             if img_np.size == 0 or img_np.shape[0] < 10 or img_np.shape[1] < 10:
                 return False
 
-            _, binary = cv2.threshold(img_np, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+            # BERSIHKAN NOISE: Blur ringan untuk menghilangkan garis background
+            img_blur = cv2.medianBlur(img_np, 3)
+
+            _, binary = cv2.threshold(img_blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
             if np.sum(binary == 255) > np.sum(binary == 0):
                 binary = cv2.bitwise_not(binary)
 
             h, w = binary.shape
-            top_part = binary[0 : int(h * 0.25), :]
-            bottom_part = binary[int(h * 0.75) : h, :]
+            top_part = binary[0 : int(h * 0.33), :]
+            bottom_part = binary[int(h * 0.67) : h, :]
 
             top_coords = np.where(top_part > 0)[1]
             bottom_coords = np.where(bottom_part > 0)[1]
@@ -101,46 +134,16 @@ class Typesetter:
             top_mean = np.mean(top_coords)
             bottom_mean = np.mean(bottom_coords)
 
+            # Rasio diturunkan ke 0.03 agar italic yang tidak terlalu miring tetap kedetect
             slant_ratio = (top_mean - bottom_mean) / max(1, w)
-            return slant_ratio > 0.04
+            return slant_ratio > 0.03
         except Exception:
             return False
-            
-    @staticmethod
-    def _detect_alignment(block):
-        """
-        Mendeteksi jenis perataan teks (center, left, right, justify) berdasarkan 
-        distribusi selisih batas kiri (X-left) dan batas kanan (X-right) dari baris-baris OCR.
-        """
-        lines_info = block.get("lines_info", [])
-        if len(lines_info) <= 1:
-            return "center"
-
-        x_lefts = [l["box"][0] for l in lines_info]
-        x_rights = [l["box"][2] for l in lines_info]
-
-        std_left = np.std(x_lefts)
-        std_right = np.std(x_rights)
-
-        # Jika deviasi batas kiri & kanan sama-sama kecil -> Justify
-        if std_left < 10 and std_right < 10:
-            return "justify"
-        # Jika rata kiri (deviasi kiri kecil, kanan bervariasi) -> Left
-        elif std_left < 12 and std_right >= 12:
-            return "left"
-        # Jika rata kanan -> Right
-        elif std_right < 12 and std_left >= 12:
-            return "right"
-        # Secara default pada komik/manhwa, teks menggunakan rata tengah -> Center
-        else:
-            return "center"
-            
 
     @staticmethod
     def _estimate_stroke_weight(pil_img, box):
         """
-        Menghitung estimasi ketebalan huruf (stroke weight) menggunakan
-        Median Distance Transform dan rasio kepadatan piksel.
+        Menghitung ketebalan huruf setelah membersihkan noise background.
         """
         try:
             crop = pil_img.crop((
@@ -154,7 +157,10 @@ class Typesetter:
             if img_np.size == 0 or img_np.shape[0] < 5 or img_np.shape[1] < 5:
                 return 0.08, 0.0
 
-            _, binary = cv2.threshold(img_np, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+            # BERSIHKAN NOISE: Blur ringan untuk menghilangkan garis background
+            img_blur = cv2.medianBlur(img_np, 3)
+
+            _, binary = cv2.threshold(img_blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
             if np.sum(binary == 255) > np.sum(binary == 0):
                 binary = cv2.bitwise_not(binary)
 
@@ -210,15 +216,9 @@ class Typesetter:
         is_bold_weight = False
         if pil_img is not None:
             stroke_weight, density = Typesetter._estimate_stroke_weight(pil_img, box)
-            if stroke_weight >= 0.20 and density >= 0.22:
+            # Threshold disesuaikan ke ketebalan >= 0.18 dan kepadatan >= 0.18
+            if stroke_weight >= 0.18 and density >= 0.18:
                 is_bold_weight = True
-
-        has_exclamation = "!" in text
-        if is_bold_weight or (has_exclamation and font_size_est > 45 and len(words) <= 3):
-            for name in FONT_BOLD:
-                path = Typesetter._resolve_font(name)
-                if path:
-                    return path
 
         # 4. Fallback ke Regular
         reg = Typesetter._resolve_font(FONT_REGULAR)
