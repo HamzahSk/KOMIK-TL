@@ -270,7 +270,8 @@ class OCREngine:
                     "text": combined_text,
                     "box": [min_x, min_y, max_x, max_y],
                     "orig_line_height": avg_height,
-                    "angle": avg_angle
+                    "angle": avg_angle,
+                    "lines_info": cluster_lines
                 })
 
         return result

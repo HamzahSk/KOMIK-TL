@@ -9,6 +9,7 @@ on:
       - config.py
       - requirements.txt
       - main.py
+      - "image_utils.py"
   workflow_dispatch:
 
 jobs:

@@ -105,6 +105,36 @@ class Typesetter:
             return slant_ratio > 0.04
         except Exception:
             return False
+            
+    @staticmethod
+    def _detect_alignment(block):
+        """
+        Mendeteksi jenis perataan teks (center, left, right, justify) berdasarkan 
+        distribusi selisih batas kiri (X-left) dan batas kanan (X-right) dari baris-baris OCR.
+        """
+        lines_info = block.get("lines_info", [])
+        if len(lines_info) <= 1:
+            return "center"
+
+        x_lefts = [l["box"][0] for l in lines_info]
+        x_rights = [l["box"][2] for l in lines_info]
+
+        std_left = np.std(x_lefts)
+        std_right = np.std(x_rights)
+
+        # Jika deviasi batas kiri & kanan sama-sama kecil -> Justify
+        if std_left < 10 and std_right < 10:
+            return "justify"
+        # Jika rata kiri (deviasi kiri kecil, kanan bervariasi) -> Left
+        elif std_left < 12 and std_right >= 12:
+            return "left"
+        # Jika rata kanan -> Right
+        elif std_right < 12 and std_left >= 12:
+            return "right"
+        # Secara default pada komik/manhwa, teks menggunakan rata tengah -> Center
+        else:
+            return "center"
+            
 
     @staticmethod
     def _estimate_stroke_weight(pil_img, box):
@@ -293,10 +323,10 @@ class Typesetter:
         return [x1, y1, x2, y2]
 
     @staticmethod
-    def _fit_font_size(text, font_path, box, img_bgr=None, max_font=140, min_font=13):
+    def _fit_font_size(text, font_path, box, img_bgr=None, max_font=110, min_font=13):
         """
-        Menyesuaikan ukuran font secara presisi terhadap luas balon kata
-        serta mencegah teks terpotong di batas atas dan bawah gelembung.
+        Menyesuaikan ukuran font secara proporsional terhadap luas balon kata
+        serta mencegah font menjadi terlalu raksasa pada balon yang lonjong.
         """
         if img_bgr is not None:
             bubble_box = Typesetter._expand_to_bubble_bounds(img_bgr, box)
@@ -310,13 +340,14 @@ class Typesetter:
         if not words:
             return None, 0, min_font, ImageFont.load_default(), 0, bubble_box
 
-        # Rasio lebar 84%, rasio tinggi 76% (mencegah teks terpotong di balon oval)
-        target_w = int(bw * 0.84)
-        target_h = int(bh * 0.76)
+        # Gunakan rasio aman 82% untuk lebar dan 74% untuk tinggi agar tidak menyentuh outline
+        target_w = int(bw * 0.82)
+        target_h = int(bh * 0.74)
 
         best_result = None
         lo = min_font
-        hi = min(max_font, int(bh * 0.60))
+        # Batasi font maksimal tidak hanya dari tinggi (50%), tapi juga maksimal 16% dari lebar gelembung
+        hi = min(max_font, int(bh * 0.50), max(20, int(bw * 0.16)))
 
         while lo <= hi:
             mid = (lo + hi) // 2
@@ -452,12 +483,9 @@ class Typesetter:
             if result is None:
                 continue
             
-            # Unpack 6 elemen output dari _fit_font_size
             lines, total_height, font_size, font, max_line_w, bubble_box = result
 
             pad = max(10, int(font_size * 0.2))
-            
-            # Hitung ukuran gelembung nyata
             bw_real = bubble_box[2] - bubble_box[0]
             bh_real = bubble_box[3] - bubble_box[1]
 
@@ -471,12 +499,51 @@ class Typesetter:
 
             lh = Typesetter._text_height(font)
             line_spacing = int(font_size * 0.25)
+            
+            # 1. POSISI VERTIKAL: Kompensasi Visual Center
+            # Memastikan jarak margin atas dan bawah pada kanvas seimbang
             current_y = (canvas_h - total_height) // 2
+            
+            # 2. DETEKSI ALIGNMENT
+            align_mode = Typesetter._detect_alignment(blk)
 
-            for line in lines:
+            for i, line in enumerate(lines):
                 lw = Typesetter._text_width(line, font)
-                cx = (canvas_w - lw) // 2
+                
+                # --- KALKULASI ALIGNMENT X ---
+                if align_mode == "left":
+                    # Margin kiri sejauh 10% dari lebar area gelembung
+                    cx = int(canvas_w * 0.10)
+                elif align_mode == "right":
+                    # Margin kanan sejauh 10% dari kanan
+                    cx = int(canvas_w * 0.90) - lw
+                elif align_mode == "justify" and len(lines) > 1 and i < len(lines) - 1:
+                    # Justified untuk baris bukan terakhir: disebar rata dari kiri ke kanan
+                    cx = int(canvas_w * 0.10)
+                    words_in_line = line.split()
+                    if len(words_in_line) > 1:
+                        words_w = sum(Typesetter._text_width(w, font) for w in words_in_line)
+                        available_space = int(canvas_w * 0.80) - words_w
+                        gap_w = available_space / (len(words_in_line) - 1)
+                        
+                        curr_x = cx
+                        for w_idx, w_text in enumerate(words_in_line):
+                            txt_draw.text(
+                                (int(curr_x), current_y),
+                                w_text,
+                                font=font,
+                                fill=blk["colors"][0],
+                                stroke_width=stroke_w,
+                                stroke_fill=blk["colors"][1],
+                            )
+                            curr_x += Typesetter._text_width(w_text, font) + gap_w
+                        current_y += lh + line_spacing
+                        continue
+                else:
+                    # Secara default Center (rata tengah)
+                    cx = (canvas_w - lw) // 2
 
+                # Rendering teks standar (Center, Left, Right, atau Baris Terakhir Justify)
                 txt_draw.text(
                     (cx, current_y),
                     line,
@@ -491,7 +558,7 @@ class Typesetter:
             if abs(angle) > 3:
                 txt_canvas = txt_canvas.rotate(-angle, expand=True, resample=Image.BICUBIC)
 
-            # Paste tepat di tengah-tengah gelembung (bubble_box), bukan boks OCR
+            # Paste tepat di pusat area putih gelembung (bubble_box)
             paste_x = bubble_box[0] + (bw_real - txt_canvas.width) // 2
             paste_y = bubble_box[1] + (bh_real - txt_canvas.height) // 2
             pil_img.paste(txt_canvas, (paste_x, paste_y), txt_canvas)
