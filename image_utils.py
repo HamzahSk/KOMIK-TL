@@ -12,9 +12,9 @@ from PIL import Image, ImageDraw, ImageFont
 # ---------------------------------------------------------------------------
 FONT_DIR = "font"
 
-FONT_REGULAR = "digistrip.ttf"
-FONT_ITALIC = ["digistrip_i.ttf", "Roboto-Italic.ttf"] 
-FONT_BOLD = ["Komika_display_kaps_bold.ttf", "Roboto-Bold.ttf"]
+FONT_REGULAR = "CC Wild Words Roman.ttf"
+FONT_ITALIC = ["CC Wild Words Italic.ttf"] 
+FONT_BOLD = ["CC Wild Words Bold Italic.ttf"]
 FONT_SFX = ["Houston Comics Personal Use.ttf", "Komika_display.ttf", "helsinki.ttf"]
 
 
