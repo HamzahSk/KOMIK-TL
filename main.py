@@ -19,6 +19,8 @@ def main():
     mangas = [u for u in config.URLMANGA if u.strip()]
     chapters = [u for u in config.URLCHAPTER if u.strip()]
     
+    font_path = getattr(config, 'FONT_PATH', 'CC Wild Words Roman.ttf')
+    
     if not mangas and not chapters:
         print("[System] URL kosong di config.py. Tidak ada yang diproses.")
         return
@@ -89,11 +91,9 @@ def main():
         raw_paths = [downloaded_paths[idx] for idx in sorted(downloaded_paths.keys())]
 
         # ==========================================
-        # FASE 2: Gabungkan Gambar (Sweet Spot: 8000px - 10000px)
+        # FASE 2: Gabungkan Gambar yang Terlalu Pendek
         # ==========================================
-        # 8000px sudah sangat cukup untuk memberi ruang jelajah area kosong
-        # tanpa risiko gambar blur atau RAM komputer crash.
-        print("Mengecek dimensi & menggabungkan gambar ke batch strip...")
+        print("Mengecek dimensi & menggabungkan gambar-gambar yang pendek...")
         merged_paths = merge_short_images(raw_paths, target_height=8000, max_workers=4)
 
         # ==========================================
@@ -224,7 +224,7 @@ def main():
                 for b in blocks:
                     b['colors'] = ImageProcessor.detect_colors(img, b['box'])
                     
-                final_img = Typesetter.apply_text(img, blocks)
+                final_img = Typesetter.apply_text(img, blocks, font_path)
                 final_img.save(final_path, format="WEBP", quality=80)
             except Exception as e:
                 print(f"Gagal memproses typesetting halaman {idx+1}: {e}")

@@ -1,12 +1,8 @@
-name: OpenCode Fix
+name: OpenCode Rust Migration
 
 on:
   workflow_dispatch:
 
-  push:
-    paths:
-      - "PROMPT.md"
-      
 permissions:
   contents: read
 
@@ -22,33 +18,9 @@ jobs:
         with:
           node-version: 22
 
-      # Setup Python environment
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: "pip"
-
-      # Cache model OCR untuk RapidOCR (model biasanya tersimpan di ~/.cache)
-      - name: Cache RapidOCR Models
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache
-          key: rapidocr-cache-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            rapidocr-cache-${{ runner.os }}-
-
-      # Install Python Dependencies agar cache pip terisi & library siap dipakai
-      - name: Install Python Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-
-      # Install dependensi sistem yang sesuai untuk RapidOCR (bukan Tesseract)
-      - name: Install RapidOCR System Dependencies
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq fonts-liberation libgl1 libglib2.0-0
+      # (Opsional) Setup Rust environment jaga-jaga jika OpenCode butuh validasi sintaks
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
 
       - name: Install OpenCode
         run: npm install -g opencode-ai
@@ -56,45 +28,30 @@ jobs:
       - name: Check OpenCode Version
         run: opencode --version
 
-      - name: Run OpenCode with Python Prompt
+      - name: Run OpenCode with Rust Migration Prompt
         run: |
           opencode run \
             --model opencode/deepseek-v4-flash-free \
             --auto \
-            "$(cat PROMPT.md)" 2>&1 | tee ai-response-recap.txt || true
-            
+            "Tolong ubah seluruh proyek manga auto translator ini (dari Python) menjadi menggunakan bahasa Rust agar prosesnya jauh lebih cepat. Tolong tingkatkan juga sistem logging-nya agar lebih detail, dan perbaiki logika akurasi OCR-nya menggunakan crate Rust yang optimal." || true
+
       - name: Collect changed files
         run: |
-          # Tambahkan semua perubahan ke staging git untuk dicek file apa saja yang diubah
           git add -A
 
           mkdir -p output_artifact
 
-          # Hanya copy file yang diubah/dibuat, abaikan environment Python (venv), node_modules, atau cache pycache
+          # Hanya copy file yang diubah/dibuat oleh OpenCode ke folder artifact
           for file in $(git diff --cached --name-only); do
-            # Filter: lewati file jika berada di dalam folder __pycache__, venv, atau file temporary
-            if [[ "$file" == *__pycache__* ]] || [[ "$file" == venv/* ]] || [[ "$file" == *.pyc ]]; then
-              continue
-            fi
-
             if [ -f "$file" ]; then
               mkdir -p "output_artifact/$(dirname "$file")"
               cp "$file" "output_artifact/$file"
             fi
           done
 
-      # Upload respons AI sebagai artifact terpisah
-      - name: Upload AI Response Artifact
+      - name: Upload Rust Code Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ai-response-recap-${{ github.sha }}
-          path: ai-response-recap.txt
-          retention-days: 7
-
-      # Upload kode hasil perubahan
-      - name: Upload Code Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: opencode-python-result-${{ github.sha }}
+          name: opencode-rust-result-${{ github.sha }}
           path: output_artifact/
           retention-days: 7

@@ -2,626 +2,304 @@
 import os
 import requests
 import concurrent.futures
-
-import cv2
 import numpy as np
+import cv2 # Tambahkan ini di deretan import atas
+
 from PIL import Image, ImageDraw, ImageFont
-
-# ---------------------------------------------------------------------------
-# Font registry – maps semantic roles to file names inside FONT_DIR
-# ---------------------------------------------------------------------------
-FONT_DIR = "font"
-
-FONT_REGULAR = "CC Wild Words Roman.ttf"
-FONT_ITALIC = ["CC Wild Words Italic.ttf"] 
-FONT_BOLD = ["CC Wild Words Bold Italic.ttf"]
-FONT_SFX = ["Houston Comics Personal Use.ttf", "Komika_display.ttf", "helsinki.ttf"]
-
 
 class ImageProcessor:
     @staticmethod
     def detect_colors(pil_img, box):
+        # 1. Crop gambar sesuai bounding box (kotak teks)
         crop = pil_img.crop((
-            max(0, int(box[0])),
-            max(0, int(box[1])),
-            min(pil_img.width, int(box[2])),
+            max(0, int(box[0])), 
+            max(0, int(box[1])), 
+            min(pil_img.width, int(box[2])), 
             min(pil_img.height, int(box[3]))
         ))
-
+        
+        # 2. Ubah ke numpy array RGB
         img_np = np.array(crop.convert("RGB"))
+        
+        # Keamanan: Jika crop gagal atau terlalu kecil, pakai warna default hitam-putih
         if img_np.size == 0 or img_np.shape[0] < 3 or img_np.shape[1] < 3:
             return (0, 0, 0), (255, 255, 255)
-
+            
+        # 3. Ratakan piksel menjadi 2D array untuk K-Means
         pixels = img_np.reshape((-1, 3)).astype(np.float32)
-
+        
+        # 4. Terapkan K-Means Clustering dengan K=2 (Mencari 2 warna dominan)
         criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0)
+        K = 2
+        
         try:
-            _, labels, centers = cv2.kmeans(pixels, 2, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS)
+            _, labels, centers = cv2.kmeans(pixels, K, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS)
+            
+            # Ubah format hasil warna kembali ke integer
             centers = np.uint8(centers)
+            
+            # Hitung jumlah piksel untuk masing-masing kelompok warna
             counts = np.bincount(labels.flatten())
-
+            
+            # Logika: Di dalam bounding box OCR, area background/bubble biasanya
+            # memakan ruang lebih banyak daripada garis huruf itu sendiri.
+            # Jadi, warna dengan jumlah piksel terbanyak = Background/Stroke
+            # Warna dengan jumlah piksel lebih sedikit = Teks
             bg_idx = np.argmax(counts)
-            text_idx = 1 - bg_idx
-
+            text_idx = 1 - bg_idx 
+            
             text_color = tuple(int(c) for c in centers[text_idx])
             stroke_color = tuple(int(c) for c in centers[bg_idx])
-
+            
+            # Pastikan teks tetap kontras (jika warnanya ternyata sama/mirip, jadikan hitam putih)
             if sum(abs(t - b) for t, b in zip(text_color, stroke_color)) < 50:
                 return (0, 0, 0), (255, 255, 255)
-
+                
             return text_color, stroke_color
-        except Exception:
+            
+        except Exception as e:
+            # Fallback jika perhitungan gagal
             return (0, 0, 0), (255, 255, 255)
 
 
-# ======================================================================
-# GANTI KESELURUHAN CLASS Typesetter DI image_utils.py DENGAN INI
-# ======================================================================
-
 class Typesetter:
-    # ------------------------------------------------------------------
-    # Font helpers
-    # ------------------------------------------------------------------
     @staticmethod
-    def _resolve_font(font_name):
-        path = os.path.join(FONT_DIR, font_name)
-        return path if os.path.exists(path) else None
-
-    @staticmethod
-    def _is_italic_slant(pil_img, box):
-        """
-        Mendeteksi kemiringan (Italic) menggunakan Image Moments (Spatial Skew).
-        Jauh lebih akurat membaca struktur asli font komik daripada memotong gambar.
-        """
-        try:
-            crop = pil_img.crop((
-                max(0, int(box[0])),
-                max(0, int(box[1])),
-                min(pil_img.width, int(box[2])),
-                min(pil_img.height, int(box[3]))
-            ))
-            img_np = np.array(crop.convert("L"))
-            if img_np.size == 0 or img_np.shape[0] < 10 or img_np.shape[1] < 10:
-                return False
-
-            # BERSIHKAN NOISE
-            img_blur = cv2.medianBlur(img_np, 3)
-            _, binary = cv2.threshold(img_blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-            
-            if np.sum(binary == 255) > np.sum(binary == 0):
-                binary = cv2.bitwise_not(binary)
-
-            # MENGHITUNG KEMIRINGAN GEOMETRIS (SKEW) DENGAN MOMENTS
-            m = cv2.moments(binary)
-            
-            # mu02 adalah varians vertikal, mu11 adalah kovarians x dan y
-            if m['mu02'] > 1e-5:
-                # Menghitung rasio geseran matriks (skewness)
-                skew = abs(m['mu11'] / m['mu02'])
-                
-                # Nilai skew > 0.15 biasanya mengindikasikan kemiringan italic yang disengaja
-                # (setara dengan sekitar 8-10 derajat kemiringan font)
-                return skew > 0.15
-                
-            return False
-        except Exception:
-            return False
-
-    @staticmethod
-    def _detect_alignment(block):
-        """
-        Mendeteksi jenis perataan teks. 
-        Sesuai request: Mutlak Center, kecuali teks panjang dan jelas-jelas rata kiri/kanan.
-        """
-        lines_info = block.get("lines_info", [])
+    def apply_text(pil_img, text_blocks, font_path="arial.ttf", sfx_font_path="Dark Poestry.ttf"):
         
-        # 1. ATURAN MUTLAK: Kurang dari 3 baris = Pasti Center.
-        if len(lines_info) < 3:
-            return "center"
-
-        x_lefts = [l["box"][0] for l in lines_info]
-        x_rights = [l["box"][2] for l in lines_info]
-        
-        # 2. EVALUASI PANJANG TEKS
-        # Jika teksnya sangat pendek di dalam kotak, jangan repot-repot bikin left/right.
-        box = block.get("box", [0, 0, 1, 1])
-        box_width = max(1, box[2] - box[0])
-        avg_line_width = np.mean([l["box"][2] - l["box"][0] for l in lines_info])
-        
-        if avg_line_width < (box_width * 0.4):
-            return "center"
-
-        # 3. MENGGUNAKAN STANDAR DEVIASI PIXEL ABSOLUT
-        std_left = np.std(x_lefts)
-        std_right = np.std(x_rights)
-
-        # Toleransi kelurusan margin (misal: margin bergeser maksimal ~8 pixel masih dianggap lurus)
-        toleransi_lurus = 8.0 
-        
-        # Syarat: Satu sisi harus sangat lurus (< toleransi), 
-        # dan sisi seberangnya harus terbukti berantakan (> toleransi * 2.5)
-        if std_left <= toleransi_lurus and std_right > (toleransi_lurus * 2.5):
-            return "left"
-        elif std_right <= toleransi_lurus and std_left > (toleransi_lurus * 2.5):
-            return "right"
-        elif std_left <= toleransi_lurus and std_right <= toleransi_lurus:
-            # Justify hanya jika rata sempurna di kedua sisi (sangat jarang di komik)
-            return "justify"
-        else:
-            return "center"
-
-    @staticmethod
-    def _estimate_stroke_weight(pil_img, box, line_height):
-        """
-        Menghitung ketebalan huruf dibandingkan dengan TINGGI SATU BARIS,
-        bukan tinggi seluruh blok teks.
-        """
-        try:
-            crop = pil_img.crop((
-                max(0, int(box[0])),
-                max(0, int(box[1])),
-                min(pil_img.width, int(box[2])),
-                min(pil_img.height, int(box[3]))
-            ))
-            
-            img_np = np.array(crop.convert("L"))
-            if img_np.size == 0 or img_np.shape[0] < 5 or img_np.shape[1] < 5:
-                return 0.08, 0.0
-
-            img_blur = cv2.medianBlur(img_np, 3)
-
-            _, binary = cv2.threshold(img_blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-            if np.sum(binary == 255) > np.sum(binary == 0):
-                binary = cv2.bitwise_not(binary)
-
-            dist = cv2.distanceTransform(binary, cv2.DIST_L2, 3)
-            stroke_pixels = dist[dist > 1.0]
-            if len(stroke_pixels) == 0:
-                return 0.08, 0.0
-                
-            avg_stroke_thickness = np.median(stroke_pixels) * 2.0
-            
-            # PERBAIKAN: Dibagi line_height, bukan tinggi gambar crop!
-            stroke_ratio = avg_stroke_thickness / max(1, line_height)
-
-            text_density = np.sum(binary > 0) / float(binary.size)
-
-            return stroke_ratio, text_density
-        except Exception:
-            return 0.08, 0.0
-
-    @staticmethod
-    def _select_font(block, pil_img=None):
-        text = block.get("text", "")
-        box = block["box"]
-        bh = box[3] - box[1]
-        
-        # Ambil tinggi aslinya per baris dari OCR Engine
-        orig_line_height = block.get("orig_line_height", bh)
-        font_size_est = int(orig_line_height * 0.9)
-        
-        words = text.split()
-        is_single = len(words) <= 1
-
-        if is_single and font_size_est > 45:
-            for name in FONT_SFX:
-                path = Typesetter._resolve_font(name)
-                if path:
-                    return path
-
-        angle = abs(block.get("angle", 0.0))
-        is_italic = angle > 6.0
-        if not is_italic and pil_img is not None:
-            is_italic = Typesetter._is_italic_slant(pil_img, box)
-
-        if is_italic:
-            if is_single and font_size_est > 35:
-                for name in FONT_SFX:
-                    path = Typesetter._resolve_font(name)
-                    if path:
-                        return path
-            for name in FONT_ITALIC:
-                path = Typesetter._resolve_font(name)
-                if path:
-                    return path
-
-        is_bold_weight = False
-        if pil_img is not None:
-            # PERBAIKAN: Kirimkan orig_line_height sebagai parameter ke-3
-            stroke_weight, density = Typesetter._estimate_stroke_weight(pil_img, box, orig_line_height)
-            
-            # Karena pembaginya sekarang akurat (1 baris), threshold 0.15 sudah mendeteksi Bold dengan sangat baik
-            if stroke_weight >= 0.15:
-                is_bold_weight = True
-
-        if is_bold_weight:
-            for name in FONT_BOLD:
-                path = Typesetter._resolve_font(name)
-                if path:
-                    return path
-
-        reg = Typesetter._resolve_font(FONT_REGULAR)
-        return reg if reg else None
-
-    @staticmethod
-    def _text_width(text, font):
-        bb = font.getbbox(text)
-        return bb[2] - bb[0] if bb else 0
-
-    @staticmethod
-    def _text_height(font):
-        bb = font.getbbox("A")
-        return bb[3] - bb[1] if bb else font.size
-
-    # ------------------------------------------------------------------
-    # PERBAIKAN 1: Word-Wrapping dengan Pemenggalan Kata ('-')
-    # ------------------------------------------------------------------
-    @staticmethod
-    def _wrap_text_with_hyphens(words, font, max_width):
-        if not words:
-            return []
-
-        lines = []
-        cur_line = []
-
-        for w in words:
-            test_line = " ".join(cur_line + [w]) if cur_line else w
-            
-            if Typesetter._text_width(test_line, font) <= max_width:
-                cur_line.append(w)
-            else:
-                if cur_line:
-                    lines.append(" ".join(cur_line))
-                    cur_line = []
-
-                if Typesetter._text_width(w, font) > max_width:
-                    part_word = ""
-                    for char in w:
-                        test_part = part_word + char + "-"
-                        if Typesetter._text_width(test_part, font) <= max_width:
-                            part_word += char
-                        else:
-                            if part_word:
-                                lines.append(part_word + "-")
-                                part_word = char
-                            else:
-                                part_word = char
-                    if part_word:
-                        cur_line = [part_word]
-                else:
-                    cur_line = [w]
-
-        if cur_line:
-            lines.append(" ".join(cur_line))
-            
-        return lines
-
-    @staticmethod
-    def _expand_to_bubble_bounds(img_bgr, text_box):
-        """
-        Mengekspansi koordinat bounding box OCR hingga mendekati tepi gelembung kata,
-        dan menyisakan safety padding agar teks tidak menabrak outline hitam.
-        """
-        h, w = img_bgr.shape[:2]
-        x1, y1, x2, y2 = map(int, text_box)
-
-        max_expand = 80
-        gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-        _, thresh = cv2.threshold(gray, 215, 255, cv2.THRESH_BINARY)
-
-        # Ekspansi ke Kiri
-        while x1 > 0 and (text_box[0] - x1) < max_expand:
-            if np.mean(thresh[y1:y2, x1 - 1]) < 180:
-                break
-            x1 -= 1
-
-        # Ekspansi ke Kanan
-        while x2 < w and (x2 - text_box[2]) < max_expand:
-            if np.mean(thresh[y1:y2, x2]) < 180:
-                break
-            x2 += 1
-
-        # Ekspansi ke Atas
-        while y1 > 0 and (text_box[1] - y1) < max_expand:
-            if np.mean(thresh[y1 - 1, x1:x2]) < 180:
-                break
-            y1 -= 1
-
-        # Ekspansi ke Bawah
-        while y2 < h and (y2 - text_box[3]) < max_expand:
-            if np.mean(thresh[y2, x1:x2]) < 180:
-                break
-            y2 += 1
-
-        # Safety padding ke dalam agar kotak gelembung tidak tepat di garis outline hitam
-        x1 = min(int(text_box[0]), x1 + 6)
-        y1 = min(int(text_box[1]), y1 + 8)
-        x2 = max(int(text_box[2]), x2 - 6)
-        y2 = max(int(text_box[3]), y2 - 8)
-
-        return [x1, y1, x2, y2]
-
-    @staticmethod
-    def _fit_font_size(text, font_path, box, img_bgr=None, max_font=110, min_font=13):
-        """
-        Menyesuaikan ukuran font secara proporsional terhadap luas balon kata
-        serta mencegah font menjadi terlalu raksasa pada balon yang lonjong.
-        """
-        if img_bgr is not None:
-            bubble_box = Typesetter._expand_to_bubble_bounds(img_bgr, box)
-        else:
-            bubble_box = box
-
-        bw = max(10, bubble_box[2] - bubble_box[0])
-        bh = max(10, bubble_box[3] - bubble_box[1])
-
-        words = text.split()
-        if not words:
-            return None, 0, min_font, ImageFont.load_default(), 0, bubble_box
-
-        # Gunakan rasio aman 82% untuk lebar dan 74% untuk tinggi agar tidak menyentuh outline
-        target_w = int(bw * 0.82)
-        target_h = int(bh * 0.74)
-
-        best_result = None
-        lo = min_font
-        # Batasi font maksimal tidak hanya dari tinggi (50%), tapi juga maksimal 16% dari lebar gelembung
-        hi = min(max_font, int(bh * 0.50), max(20, int(bw * 0.16)))
-
-        while lo <= hi:
-            mid = (lo + hi) // 2
-            try:
-                font = (
-                    ImageFont.truetype(font_path, mid)
-                    if font_path and os.path.exists(font_path)
-                    else ImageFont.load_default()
-                )
-            except Exception:
-                font = ImageFont.load_default()
-
-            lines = Typesetter._wrap_text_with_hyphens(words, font, target_w)
-            if not lines:
-                hi = mid - 1
-                continue
-
-            line_spacing = int(mid * 0.22)
-            single_line_h = Typesetter._text_height(font)
-            total_h = (len(lines) * single_line_h) + ((len(lines) - 1) * line_spacing)
-            max_lw = max(Typesetter._text_width(l, font) for l in lines)
-
-            if max_lw <= target_w and total_h <= target_h:
-                best_result = (lines, total_h, mid, font, max_lw, bubble_box)
-                lo = mid + 1
-            else:
-                hi = mid - 1
-
-        if best_result is not None:
-            return best_result
-
-        # Fallback ke font minimum jika gelembung terlalu kecil
-        try:
-            font = (
-                ImageFont.truetype(font_path, min_font)
-                if font_path and os.path.exists(font_path)
-                else ImageFont.load_default()
-            )
-        except Exception:
-            font = ImageFont.load_default()
-            
-        lines = Typesetter._wrap_text_with_hyphens(words, font, target_w)
-        single_line_h = Typesetter._text_height(font)
-        line_spacing = int(min_font * 0.22)
-        total_h = (len(lines) * single_line_h) + (max(0, len(lines) - 1) * line_spacing)
-        max_lw = max((Typesetter._text_width(l, font) for l in lines), default=0)
-        
-        return lines, total_h, min_font, font, max_lw, bubble_box
-
-    # ------------------------------------------------------------------
-    # PERBAIKAN 2: Inpaint Mask Lebih Bersih Menghapus Bekas Garis/Shadow
-    # ------------------------------------------------------------------
-    @staticmethod
-    def _build_inpaint_mask(img_bgr, text_blocks):
-        gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
-        mask = np.zeros(img_bgr.shape[:2], dtype=np.uint8)
-
+        # ==========================================
+        # 0. FASE FILTERING (Menyaring Teks)
+        # ==========================================
+        valid_blocks = []
         for block in text_blocks:
-            box = block["box"]
+            box = block['box']
+            bh = box[3] - box[1]
+            
+            # Ambil teks asli untuk mengecek apakah ini 1 kata
+            original_text = block.get('text', '')
+            words = original_text.split()
+            
+            # Hitung estimasi ukuran font dan kemiringan
+            font_size_est = int(block.get('orig_line_height', bh) * 0.9)
+            angle = block.get('angle', 0.0)
+            
+            is_single_word = len(words) <= 1
+            is_sfx = is_single_word and font_size_est > 50
+            
+            # Syarat 1: SFX (1 kata) yang miring dibiarkan aslinya
+            # Angka 5 adalah batas toleransi kemiringan (derajat). Bisa kamu sesuaikan.
+            if is_sfx and abs(angle) > 5:
+                continue 
+                
+            # Syarat 2: Teks dengan ukuran raksasa dibiarkan aslinya
+            # Angka 120 adalah batas ukuran font. Jika lebih dari 120px, skip.
+            if font_size_est > 120:
+                continue
+                
+            # Jika lolos syarat, masukkan ke daftar blok yang akan diproses
+            valid_blocks.append(block)
+            
+        # Timpa text_blocks lama dengan yang sudah difilter
+        text_blocks = valid_blocks
+
+        # ==========================================
+        # 1. FASE INPAINTING (Masking Teks via Canny Edge)
+        # ==========================================
+        img_np = np.array(pil_img.convert('RGB'))
+        img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
+        gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
+        
+        mask = np.zeros(img_bgr.shape[:2], dtype=np.uint8)
+        
+        for block in text_blocks:
+            box = block['box']
             pad = 5
             x1, y1 = max(0, int(box[0]) - pad), max(0, int(box[1]) - pad)
             x2, y2 = min(img_bgr.shape[1], int(box[2]) + pad), min(img_bgr.shape[0], int(box[3]) + pad)
-
-            if (x2 - x1) < 5 or (y2 - y1) < 5:
-                continue
-
+            
+            if x2 - x1 < 5 or y2 - y1 < 5: continue
+            
             roi_gray = gray[y1:y2, x1:x2]
+            
+            # 1. Cari garis tegas (huruf). Gradasi halus otomatis diabaikan!
             edges = cv2.Canny(roi_gray, 50, 150)
-
-            kernel = np.ones((5, 5), np.uint8)
+            
+            # 2. Tebalkan garis tersebut agar outline (stroke) putih khas komik ikut tertutup
+            kernel = np.ones((5,5), np.uint8)
             dilated = cv2.dilate(edges, kernel, iterations=2)
-
+            
+            # 3. Isi lubang di dalam huruf (seperti bagian dalam huruf O, A, P, dll)
             contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             cv2.drawContours(dilated, contours, -1, 255, -1)
-
+            
+            # Tempelkan bentuk persis hurufnya ke mask utama
             mask[y1:y2, x1:x2] = cv2.bitwise_or(mask[y1:y2, x1:x2], dilated)
-
-        return mask
-
-    # ==================================================================
-    # METHOD APPLY_TEXT LENGKAP
-    # ==================================================================
-    @staticmethod
-    def apply_text(pil_img, text_blocks):
-        """Pipeline: filter -> inpaint -> typeset."""
-        valid = []
-        for blk in text_blocks:
-            box = blk["box"]
-            bh = box[3] - box[1]
-            font_est = int(blk.get("orig_line_height", bh) * 0.9)
-            angle = abs(blk.get("angle", 0.0))
-            words = blk.get("text", "").split()
-            is_single = len(words) <= 1
-
-            if (is_single and font_est > 60 and angle > 5) or font_est > 130:
-                continue
-            valid.append(blk)
-
-        text_blocks = valid
-
-        # --- INPAINTING ---
-        img_np = np.array(pil_img.convert("RGB"))
-        img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
-
-        inpaint_mask = Typesetter._build_inpaint_mask(img_bgr, text_blocks)
-
-        if np.any(inpaint_mask):
-            inpainted_bgr = cv2.inpaint(img_bgr, inpaint_mask, inpaintRadius=4, flags=cv2.INPAINT_NS)
-        else:
-            inpainted_bgr = img_bgr
-
+            
+        # Eksekusi Inpainting (hanya akan menambal jalur huruf, background aman)
+        inpainted_bgr = cv2.inpaint(img_bgr, mask, inpaintRadius=4, flags=cv2.INPAINT_NS)
+        
         inpainted_rgb = cv2.cvtColor(inpainted_bgr, cv2.COLOR_BGR2RGB)
         pil_img = Image.fromarray(inpainted_rgb)
 
-        # --- TYPESETTING ---
-        for blk in text_blocks:
-            box = blk["box"]
+        # ==========================================
+        # 2. FASE TYPESETTING (Menempel Teks Baru)
+        # ==========================================
+        for block in text_blocks:
+            box = block['box']
             bw, bh = box[2] - box[0], box[3] - box[1]
-            if bw < 8 or bh < 8:
-                continue
-
-            display_text = blk.get("translated_text", blk.get("text", ""))
-            if not display_text.strip():
-                continue
-
-            font_path = Typesetter._select_font(blk, pil_img)
-            if font_path is None:
-                font_path = Typesetter._resolve_font(FONT_REGULAR)
-
-            result = Typesetter._fit_font_size(
-                display_text, font_path, box, img_bgr=inpainted_bgr
-            )
-            if result is None:
-                continue
+            if bw < 6 or bh < 6: continue
             
-            lines, total_height, font_size, font, max_line_w, bubble_box = result
+            display_text = block.get('translated_text', block['text'])
+            words = display_text.upper().split()
+            is_single_word = len(words) <= 1
+            
+            max_font_limit = 150 
+            font_size = int(block.get('orig_line_height', bh) * 0.9)
+            font_size = max(10, min(max_font_limit, font_size)) 
+            
+            is_sfx = is_single_word and font_size > 50
+            
+            active_font_path = sfx_font_path if is_sfx and os.path.exists(sfx_font_path) else font_path
+ 
+            total_height = 0
+            line_height = 0
+            lines = []
+            
+            while font_size > 8:
+                font = ImageFont.truetype(active_font_path, font_size) if os.path.exists(active_font_path) else ImageFont.load_default()
+                lines, current_line = [], []
+                
+                def get_tw(text):
+                    bb = font.getbbox(text)
+                    return bb[2] - bb[0] if bb else 0
+                
+                if is_single_word:
+                    stroke_w = max(2, int(font_size * 0.08))
+                    
+                    word_width = get_tw(words[0]) + (stroke_w * 2) 
+                    line_height = font.getbbox("A")[3] - font.getbbox("A")[1] + int(font_size * 0.45)
+                    total_needed_h = line_height + (stroke_w * 2)
+                    
+                    if word_width <= (bw * 1.5) and total_needed_h <= (bh * 1.2):
 
-            pad = max(10, int(font_size * 0.2))
-            bw_real = bubble_box[2] - bubble_box[0]
-            bh_real = bubble_box[3] - bubble_box[1]
+                        lines = [words[0]]
+                        total_height = line_height
+                        break  
+                    else:
+                        font_size -= 2 
+                        continue
+                
+                for word in words:
+                    word_width = get_tw(word)
+                    
+                    if word_width > bw * 0.95:
+                        if current_line:
+                            lines.append(' '.join(current_line))
+                            current_line = []
+                            
+                        temp_word = word
+                        while temp_word:
+                            for i in range(len(temp_word), 0, -1):
+                                suffix = "-" if i < len(temp_word) else ""
+                                part = temp_word[:i] + suffix
+                                
+                                if get_tw(part) <= bw * 0.95 or i == 1:
+                                    if i == len(temp_word):
+                                        current_line = [part]
+                                    else:
+                                        lines.append(part)
+                                    temp_word = temp_word[i:]
+                                    break
+                    else:
+                        test_line = ' '.join(current_line + [word]) if current_line else word
+                        if get_tw(test_line) <= bw * 0.95:
+                            current_line.append(word)
+                        else:
+                            if current_line:
+                                lines.append(' '.join(current_line))
+                            current_line = [word]
+                            
+                if current_line: 
+                    lines.append(' '.join(current_line))
+                
+                line_height = font.getbbox("A")[3] - font.getbbox("A")[1] + int(font_size * 0.45)
+                total_height = len(lines) * line_height
+                
+                if total_height <= bh * 0.95:
+                    break
+                font_size -= 1
 
-            canvas_w = bw_real + pad * 2
-            canvas_h = bh_real + pad * 2
-            txt_canvas = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
+            orig_bw = box[2] - box[0]
+
+            pad_canvas = max(15, int(font_size * 0.3))
+            canvas_w = orig_bw + (pad_canvas * 2)
+            canvas_h = bh + (pad_canvas * 2)
+            
+            txt_canvas = Image.new('RGBA', (canvas_w, canvas_h), (0, 0, 0, 0))
             txt_draw = ImageDraw.Draw(txt_canvas)
-
-            is_sfx = len(display_text.split()) <= 1 and font_size > 40
-            stroke_w = max(2, int(font_size * 0.08)) if is_sfx else max(1, int(font_size * 0.05))
-
-            lh = Typesetter._text_height(font)
-            line_spacing = int(font_size * 0.25)
             
-            # 1. POSISI VERTIKAL: Kompensasi Visual Center
-            # Memastikan jarak margin atas dan bawah pada kanvas seimbang
             current_y = (canvas_h - total_height) // 2
             
-            # 2. DETEKSI ALIGNMENT
-            align_mode = Typesetter._detect_alignment(blk)
-
-            for i, line in enumerate(lines):
-                lw = Typesetter._text_width(line, font)
+            for line in lines:
+                cw = font.getbbox(line)[2] - font.getbbox(line)[0]
+                cx = (canvas_w - cw) // 2
                 
-                # --- KALKULASI ALIGNMENT X ---
-                if align_mode == "left":
-                    # Margin kiri sejauh 10% dari lebar area gelembung
-                    cx = int(canvas_w * 0.10)
-                elif align_mode == "right":
-                    # Margin kanan sejauh 10% dari kanan
-                    cx = int(canvas_w * 0.90) - lw
-                elif align_mode == "justify" and len(lines) > 1 and i < len(lines) - 1:
-                    # Justified untuk baris bukan terakhir: disebar rata dari kiri ke kanan
-                    cx = int(canvas_w * 0.10)
-                    words_in_line = line.split()
-                    if len(words_in_line) > 1:
-                        words_w = sum(Typesetter._text_width(w, font) for w in words_in_line)
-                        available_space = int(canvas_w * 0.80) - words_w
-                        gap_w = available_space / (len(words_in_line) - 1)
-                        
-                        curr_x = cx
-                        for w_idx, w_text in enumerate(words_in_line):
-                            txt_draw.text(
-                                (int(curr_x), current_y),
-                                w_text,
-                                font=font,
-                                fill=blk["colors"][0],
-                                stroke_width=stroke_w,
-                                stroke_fill=blk["colors"][1],
-                            )
-                            curr_x += Typesetter._text_width(w_text, font) + gap_w
-                        current_y += lh + line_spacing
-                        continue
-                else:
-                    # Secara default Center (rata tengah)
-                    cx = (canvas_w - lw) // 2
-
-                # Rendering teks standar (Center, Left, Right, atau Baris Terakhir Justify)
+                stroke_w = max(2, int(font_size * 0.08)) if is_single_word else max(1, int(font_size * 0.05))
+                
                 txt_draw.text(
-                    (cx, current_y),
-                    line,
-                    font=font,
-                    fill=blk["colors"][0],
-                    stroke_width=stroke_w,
-                    stroke_fill=blk["colors"][1],
+                    (cx, current_y), 
+                    line, 
+                    font=font, 
+                    fill=block['colors'][0], 
+                    stroke_width=stroke_w, 
+                    stroke_fill=block['colors'][1]
                 )
-                current_y += lh + line_spacing
-
-            angle = blk.get("angle", 0.0)
-            if abs(angle) > 3:
+                current_y += line_height
+            
+            angle = block.get('angle', 0.0)
+            if abs(angle) > 3: 
                 txt_canvas = txt_canvas.rotate(-angle, expand=True, resample=Image.BICUBIC)
-
-            # Paste tepat di pusat area putih gelembung (bubble_box)
-            paste_x = bubble_box[0] + (bw_real - txt_canvas.width) // 2
-            paste_y = bubble_box[1] + (bh_real - txt_canvas.height) // 2
+            
+            paste_x = box[0] + (orig_bw - txt_canvas.width) // 2
+            paste_y = box[1] + (bh - txt_canvas.height) // 2
+            
             pil_img.paste(txt_canvas, (paste_x, paste_y), txt_canvas)
-
+                
         return pil_img
-
-# ======================================================================
-# Helper utilities (download, merge, slice) – kept largely unchanged
-# ======================================================================
-
 
 def download_image(url, save_path, chapter_url=""):
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
     }
+    
     if "bbato" in chapter_url:
-        headers["Referer"] = "https://bbato.com/"
+        headers['Referer'] = "https://bbato.com/"
     elif "vymanga" in chapter_url:
-        headers["Referer"] = "https://vymanga.com/"
+        headers['Referer'] = "https://vymanga.com/"
 
     try:
         res = requests.get(url, headers=headers, stream=True, timeout=15)
         if res.status_code == 200:
-            with open(save_path, "wb") as f:
-                for chunk in res.iter_content(1024):
-                    if chunk:
+            with open(save_path, 'wb') as f:
+                for chunk in res.iter_content(1024): 
+                    if chunk: 
                         f.write(chunk)
+            
             if os.path.getsize(save_path) > 0:
                 return True
             else:
                 os.remove(save_path)
                 return False
-    except Exception:
+    except Exception: 
         pass
     return False
 
-
 def download_page(page, out_dir, chapter_url=""):
-    idx = page["index"]
+    idx = page['index']
     raw_path = os.path.join(out_dir, f"raw_{idx}.jpg")
-    if download_image(page["imageUrl"], raw_path, chapter_url):
+    
+    if download_image(page['imageUrl'], raw_path, chapter_url):
         return raw_path
     return None
-
 
 def process_merge_group(group_data, merge_idx, out_dir, target_width):
     current_height = 0

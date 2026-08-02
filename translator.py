@@ -4,17 +4,15 @@ import re
 import random
 import requests
 import urllib.parse
-import config
 
 class AiTranslator:
     def __init__(self):
-        # Konfigurasi API Utama (Bluesminds - gpt-5-mini) -> Tanpa Sesi
-        self.main_api_url = 'https://api.bluesminds.com/v1/chat/completions'
-        self.main_api_key = 'sk-zJct6jIkvGNYSMyK9ETsitpaBa3DE23ftQI5n4VgQmYEKxWh'
-        self.main_model = 'gpt-5-mini'
+        # Konfigurasi API Utama (Deepseek Custom Endpoint)
+        self.main_api_base = 'http://185.211.103.141:3613/chat/deepseek'
+        self.current_chat_id = None # Menyimpan ID sesi untuk 1 chapter
         
-        # Konfigurasi API Fallback 1 (Deepseek Custom Endpoint / Vercel)
-        self.fallback_url_1 = 'https://ai-seerver.vercel.app/chat/deepseek'
+        # Konfigurasi API Fallback 1 (DeepSeek Proxy)
+        self.fallback_url = 'https://llmproxy.org/api/chat.php'
         
         # Konfigurasi API Fallback 2 (TheTurboChat / Gemini)
         self.fallback_url_2 = 'https://theturbochat.com/api/chat/message'
@@ -22,24 +20,35 @@ class AiTranslator:
         self.MAX_CHARS = 1500
         self.SEPARATOR = '130495848'
         
-        self.instruction = getattr(
-            config, 
-            "PROMPT_TRANSLATOR", 
-            "Terjemahkan teks komik ini ke bahasa Indonesia yang natural dan tidak kaku."
+        self.instruction = (
+            "Terjemahkan teks komik hasil OCR ini ke bahasa Indonesia yang natural, hidup, dan emosional, "
+            "seolah komik ini aslinya berbahasa Indonesia. Dialog dan monolog harus mengalir seperti percakapan nyata, "
+            "bukan textbook atau terjemahan kaku. Hindari kata 'lu/gue' atau slang berlebihan yang terkesan tidak profesional; "
+            "gunakan 'aku/kamu/kau' atau 'saya/Anda' sesuai konteks karakter. SFX wajib diterjemahkan ke padanan alami Indonesia "
+            "(contoh: BAM→DOR, THUMP→DEG, SLAM→BRAK, GASP→HAAH, CREAK→KRIET, SPLASH→BYUR). Jika ada typo atau teks rusak "
+            "akibat OCR, tafsirkan maksudnya berdasarkan bunyi dan konteks panel, lalu terjemahkan maknanya. "
+            "Nama tokoh dan istilah khusus jangan diubah. Jangan tambahkan simbol, emoji, atau format apa pun "
+            "yang tidak ada di teks asli."
         )
-        
-        self.format_rules = getattr(
-            config,
-            "PROMPT_FORMAT_RULES",
-            "Terjemahkan teks di bawah ini dan pisahkan dengan '{separator}'."
-        )
-        
+
     def reset_chapter_session(self):
-        """
-        Dibiarkan agar tidak error jika dipanggil oleh file main,
-        tapi tidak lagi menyimpan ID sesi untuk menghemat token.
-        """
-        print("[System] Pindah Chapter (Sesi utama bersifat stateless/hemat token).")
+        """Panggil ini setiap kali pindah chapter agar ID chat direset ke None."""
+        self.current_chat_id = None
+        print("[System] Sesi Chat ID Translator direset untuk chapter baru.")
+
+    def _get_fallback_headers(self):
+        """Membuat header dinamis dengan IP acak untuk fallback 1."""
+        ip = f"{random.randint(1, 255)}.{random.randint(0, 255)}.{random.randint(0, 255)}.{random.randint(0, 255)}"
+        return {
+            'Accept': '*/*',
+            'Content-Type': 'application/json',
+            'Origin': 'https://deep-seek.online',
+            'Referer': 'https://deep-seek.online/',
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'X-Forwarded-For': ip,
+            'X-Real-IP': ip,
+            'CF-Connecting-IP': ip
+        }
 
     def _create_batches(self, texts):
         batches = []
@@ -58,79 +67,52 @@ class AiTranslator:
         if current_batch:
             batches.append(current_batch)
         return batches
-    
+
+    # PERBAIKAN: Indentasi dimundurkan agar sejajar dengan fungsi lainnya
     def _format_batch_text(self, batch_texts):
-        rules_text = self.format_rules.format(separator=self.SEPARATOR)
-        
         return (
             f"INSTRUCTION: {self.instruction}\n\n"
-            f"ATURAN PENTING: {rules_text}\n\n"
+            f"ATURAN PENTING: Di bawah ini ada kumpulan teks komik yang dipisahkan oleh '{self.SEPARATOR}'. "
+            f"Teks-teks ini bisa berupa dialog bubble, SFX, atau campuran dari beberapa panel. "
+            f"Dialog antar bubble mungkin masih dalam satu percakapan yang sama—pastikan terjemahannya tetap nyambung "
+            f"secara alur dan karakter. Cermati dan bedakan mana dialog dan mana SFX sebelum menerjemahkan. "
+            f"Hasil akhir harus berupa teks terjemahan *BAHASA INDONESIA* yang dipisahkan oleh '{self.SEPARATOR}' tanpa tambahan "
+            f"penjelasan, basa-basi, atau penomoran apa pun.\n\n"
             f"TEKS SUMBER:\n\n"
             + f"\n{self.SEPARATOR}\n".join(batch_texts)
         )
 
-    def _main_translate(self, prompt_text):
-        """Metode API Utama menggunakan Bluesminds (stateless / tanpa session)."""
-        headers = {
-            "Authorization": f"Bearer {self.main_api_key}",
-            "Content-Type": "application/json"
-        }
+    def _fallback_translate(self, prompt_text):
+        """Metode fallback 1 menggunakan DeepSeek via llmproxy."""
+        print("[System] Memulai sesi Fallback 1 via DeepSeek...")
         
         payload = {
-            "model": self.main_model,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt_text
-                }
-            ],
-            "temperature": 0.7
+            "messages": [{"content": prompt_text, "role": "user"}],
+            "model": "v3",
+            "stream": False,
+            "web_search": False
         }
 
-        response = requests.post(
-            self.main_api_url, 
-            headers=headers, 
-            json=payload, 
-            timeout=45
-        )
-        response.raise_for_status()
-        data = response.json()
-        
-        choices = data.get('choices', [])
-        if not choices:
-            raise ValueError("Respons dari Bluesminds tidak memiliki 'choices'.")
-            
-        content = choices[0].get('message', {}).get('content', '')
-        return content
-
-    def _fallback_translate_1(self, prompt_text):
-        """Metode Fallback 1 menggunakan Deepseek Vercel (sebelumnya API Utama)."""
-        print("[System] Memulai sesi Fallback 1 via DeepSeek Vercel...")
-        
-        encoded_query = urllib.parse.quote(prompt_text)
-        req_url = f"{self.fallback_url_1}?q={encoded_query}"
-        
         try:
-            response = requests.get(req_url, timeout=45)
+            response = requests.post(
+                self.fallback_url, 
+                headers=self._get_fallback_headers(), 
+                json=payload, 
+                timeout=45
+            )
             response.raise_for_status()
             data = response.json()
             
-            if data.get('status') != 'success':
-                raise ValueError(f"Status response API bukan success: {data}")
-                
-            ai_response_data = data.get('ai_response', {})
-            if not ai_response_data.get('status'):
-                raise ValueError(f"AI merespon dengan status false: {ai_response_data}")
-                
-            result_data = ai_response_data.get('data', {})
-            return result_data.get('message', '')
+            content = data.get('content', '')
+            clean_content = re.sub(r'<think>.*?</think>', '', content, flags=re.DOTALL | re.IGNORECASE).strip()
+            return clean_content
             
         except Exception as e:
-            print(f"[Error] Fallback 1 API DeepSeek Vercel gagal: {e}")
+            print(f"[Error] Fallback 1 API DeepSeek gagal: {e}")
             return None
 
     def _fallback_translate_2(self, prompt_text):
-        """Metode Fallback 2 menggunakan Gemini via TheTurboChat."""
+        """Metode fallback 2 menggunakan Gemini via TheTurboChat."""
         print("[System] Memulai sesi Fallback 2 via TheTurboChat (Gemini)...")
         
         headers = {
@@ -197,14 +179,38 @@ class AiTranslator:
             main_success = False
             for attempt in range(2): # Mencoba maksimal 2 kali
                 try:
-                    # 1. Coba API Utama (Bluesminds)
-                    ai_response_text = self._main_translate(user_message)
+                    # 1. Coba API Utama (Custom Deepseek Endpoint)
+                    encoded_query = urllib.parse.quote(user_message)
+                    req_url = f"{self.main_api_base}?q={encoded_query}"
+                    
+                    # Tambahkan ID jika sudah ada dari batch sebelumnya (di chapter yang sama)
+                    if self.current_chat_id:
+                        req_url += f"&id={self.current_chat_id}"
+                        
+                    response = requests.get(req_url, timeout=45)
+                    response.raise_for_status()
+                    data = response.json()
+                    
+                    if data.get('status') != 'success':
+                        raise ValueError(f"Status response API bukan success: {data}")
+                        
+                    ai_response_data = data.get('ai_response', {})
+                    if not ai_response_data.get('status'):
+                        raise ValueError(f"AI merespon dengan status false: {ai_response_data}")
+                        
+                    result_data = ai_response_data.get('data', {})
+                    ai_response_text = result_data.get('message', '')
+                    
+                    # Simpan chat_id untuk request batch berikutnya di chapter yang sama
+                    new_chat_id = result_data.get('id')
+                    if new_chat_id:
+                        self.current_chat_id = new_chat_id
                     
                     # Verifikasi hasil Utama
                     translations = self._verify_and_clean(ai_response_text, batch)
                     
                     if translations:
-                        print("=== RESPON UTAMA SUKSES ===")
+                        print(f"=== RESPON UTAMA SUKSES (Chat ID: {self.current_chat_id}) ===")
                         main_success = True
                         break # Jika sukses, keluar dari loop percobaan
                     else:
@@ -220,8 +226,8 @@ class AiTranslator:
             if not main_success:
                 print("[Warning] API Utama gagal setelah 2 kali percobaan. Beralih ke Fallback 1...")
                 
-                # 2. Fallback 1 (DeepSeek Vercel)
-                ai_response = self._fallback_translate_1(user_message)
+                # 2. Fallback 1 (DeepSeek Proxy)
+                ai_response = self._fallback_translate(user_message)
                 translations = self._verify_and_clean(ai_response, batch)
                 
                 if translations:
@@ -229,7 +235,7 @@ class AiTranslator:
                 else:
                     print("[Warning] Fallback 1 Gagal atau Format Berantakan. Beralih ke Fallback 2...")
                     
-                    # 3. Fallback 2 (TheTurboChat - Gemini)
+                    # 3. Fallback 2 (TheTurboChat)
                     ai_response = self._fallback_translate_2(user_message)
                     translations = self._verify_and_clean(ai_response, batch)
                     
@@ -243,6 +249,7 @@ class AiTranslator:
             time.sleep(1.5)
             
         return all_translations
+
 
     def _clean_part(self, text):
         cleaned = text.strip()
