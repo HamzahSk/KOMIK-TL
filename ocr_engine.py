@@ -130,29 +130,26 @@ class OCREngine:
     def _can_merge(self, candidate, cluster_info):
         """Determines whether `candidate` belongs to the same dialog bubble as
         the growing cluster tracked in `cluster_info`.
-        
-        Perbaikan: Mencegah SFX (ukuran besar/sudut miring) bergabung dengan
-        teks dialog atau pesan sistem.
         """
         box = candidate['box']
         cw = box[2] - box[0]
         ch = box[3] - box[1]
 
-        # 1. CEK PERBEDAAN UKURAN FONT (SFX vs Teks Normal)
-        # Diperketat dari 2.8 menjadi 1.6 agar kata besar (SFX) tidak menyatu dengan teks kecil
-        if cluster_info['max_h'] / max(1, ch) > 1.6 or ch / max(1, cluster_info['min_h']) > 1.6:
+        # Menghitung rata-rata tinggi baris di dalam cluster saat ini
+        avg_h = sum(b[3] - b[1] for b in cluster_info['boxes']) / len(cluster_info['boxes'])
+
+        # 1. CEK PERBEDAAN UKURAN FONT (Judul vs Teks Normal)
+        # Diperketat: Jika beda tinggi rata-rata baris > 1.35x, pisahkan jadi kelompok baru!
+        if max(avg_h, ch) / max(1, min(avg_h, ch)) > 1.35:
             return False
 
-        # 2. CEK PERBEDAAN SUDUT (KEMIRINGAN) YANG LEBIH KETAT
+        # 2. CEK PERBEDAAN SUDUT (KEMIRINGAN)
         avg_angle = sum(cluster_info['angles']) / len(cluster_info['angles'])
         angle_diff = abs(candidate['angle'] - avg_angle)
         
-        # Jika deviasi sudut > 10 derajat, jangan gabungkan
         if angle_diff > 10:
             return False
             
-        # Jika salah satu teks miring (> 8 derajat), syarat perbedaannya diperketat (< 6 derajat)
-        # Ini memisahkan SFX "FLASH" (miring) dari teks sistem (lurus 0 derajat)
         if (abs(candidate['angle']) > 5 or abs(avg_angle) > 5) and angle_diff > 4:
             return False
 
@@ -168,7 +165,6 @@ class OCREngine:
             else:
                 ca = (box[0] + box[2]) / 2.0
                 cc = (cbox[0] + cbox[2]) / 2.0
-                # Diperketat sedikit dari 0.35 ke 0.28 agar teks luar kotak tidak mudah masuk
                 if abs(ca - cc) < max(cw, cbw) * 0.28:
                     horizontal_ok = True
                     break
@@ -176,7 +172,7 @@ class OCREngine:
         if not horizontal_ok:
             return False
 
-        # 4. CEK JARAK VERTIKAL (GAP)
+        # 4. CEK JARAK VERTIKAL (SPACE TAMBAHAN)
         vertical_ok = False
         for cbox in cluster_info['boxes']:
             cch = cbox[3] - cbox[1]
@@ -189,8 +185,10 @@ class OCREngine:
             else:
                 gap = 0
 
-            # Batas gap vertikal maksimal antar baris dialog adalah 1.3x tinggi huruf
-            if gap <= max(mh * 1.3, 12) and gap >= -mh * 0.5:
+            # PERBAIKAN: Batas gap diperketat menjadi 0.9x.
+            # Jika ada "space tambahan" antar baris yang besarnya hampir menyamai tinggi 1 huruf,
+            # berarti itu beda kelompok/paragraf.
+            if gap <= max(mh * 0.9, 14) and gap >= -mh * 0.5:
                 vertical_ok = True
                 break
 

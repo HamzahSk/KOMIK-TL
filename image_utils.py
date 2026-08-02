@@ -70,7 +70,8 @@ class Typesetter:
     @staticmethod
     def _is_italic_slant(pil_img, box):
         """
-        Mendeteksi kemiringan huruf setelah membersihkan noise background (screentone).
+        Mendeteksi kemiringan (Italic) menggunakan Image Moments (Spatial Skew).
+        Jauh lebih akurat membaca struktur asli font komik daripada memotong gambar.
         """
         try:
             crop = pil_img.crop((
@@ -83,61 +84,68 @@ class Typesetter:
             if img_np.size == 0 or img_np.shape[0] < 10 or img_np.shape[1] < 10:
                 return False
 
-            # BERSIHKAN NOISE: Blur ringan untuk menghilangkan garis background
+            # BERSIHKAN NOISE
             img_blur = cv2.medianBlur(img_np, 3)
-
             _, binary = cv2.threshold(img_blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+            
             if np.sum(binary == 255) > np.sum(binary == 0):
                 binary = cv2.bitwise_not(binary)
 
-            h, w = binary.shape
-            top_part = binary[0 : int(h * 0.33), :]
-            bottom_part = binary[int(h * 0.67) : h, :]
-
-            top_coords = np.where(top_part > 0)[1]
-            bottom_coords = np.where(bottom_part > 0)[1]
-
-            if len(top_coords) == 0 or len(bottom_coords) == 0:
-                return False
-
-            top_mean = np.mean(top_coords)
-            bottom_mean = np.mean(bottom_coords)
-
-            # Rasio diturunkan ke 0.03 agar italic yang tidak terlalu miring tetap kedetect
-            slant_ratio = (top_mean - bottom_mean) / max(1, w)
-            return slant_ratio > 0.03
+            # MENGHITUNG KEMIRINGAN GEOMETRIS (SKEW) DENGAN MOMENTS
+            m = cv2.moments(binary)
+            
+            # mu02 adalah varians vertikal, mu11 adalah kovarians x dan y
+            if m['mu02'] > 1e-5:
+                # Menghitung rasio geseran matriks (skewness)
+                skew = abs(m['mu11'] / m['mu02'])
+                
+                # Nilai skew > 0.15 biasanya mengindikasikan kemiringan italic yang disengaja
+                # (setara dengan sekitar 8-10 derajat kemiringan font)
+                return skew > 0.15
+                
+            return False
         except Exception:
             return False
-            
+
     @staticmethod
     def _detect_alignment(block):
         """
-        Mendeteksi jenis perataan teks. Dirombak agar Rata Tengah (Center) 
-        menjadi default mutlak untuk komik.
+        Mendeteksi jenis perataan teks. 
+        Sesuai request: Mutlak Center, kecuali teks panjang dan jelas-jelas rata kiri/kanan.
         """
         lines_info = block.get("lines_info", [])
         
-        # PERBAIKAN: Kalau cuma 1 atau 2 baris, hampir mustahil butuh rata kiri/kanan.
-        # Langsung paksa Center agar tidak salah deteksi.
-        if len(lines_info) <= 2:
+        # 1. ATURAN MUTLAK: Kurang dari 3 baris = Pasti Center.
+        if len(lines_info) < 3:
             return "center"
 
         x_lefts = [l["box"][0] for l in lines_info]
         x_rights = [l["box"][2] for l in lines_info]
-
+        
+        # 2. EVALUASI PANJANG TEKS
+        # Jika teksnya sangat pendek di dalam kotak, jangan repot-repot bikin left/right.
         box = block.get("box", [0, 0, 1, 1])
-        bw = max(1, box[2] - box[0])
+        box_width = max(1, box[2] - box[0])
+        avg_line_width = np.mean([l["box"][2] - l["box"][0] for l in lines_info])
+        
+        if avg_line_width < (box_width * 0.4):
+            return "center"
 
-        norm_std_left = np.std(x_lefts) / bw
-        norm_std_right = np.std(x_rights) / bw
+        # 3. MENGGUNAKAN STANDAR DEVIASI PIXEL ABSOLUT
+        std_left = np.std(x_lefts)
+        std_right = np.std(x_rights)
 
-        # PERBAIKAN: Syarat Rata Kiri/Kanan diperketat ekstrem!
-        # Harus benar-benar lurus sempurna (< 0.02) dan sisi seberangnya sangat berantakan (> 0.10)
-        if norm_std_left < 0.02 and norm_std_right > 0.10:
+        # Toleransi kelurusan margin (misal: margin bergeser maksimal ~8 pixel masih dianggap lurus)
+        toleransi_lurus = 8.0 
+        
+        # Syarat: Satu sisi harus sangat lurus (< toleransi), 
+        # dan sisi seberangnya harus terbukti berantakan (> toleransi * 2.5)
+        if std_left <= toleransi_lurus and std_right > (toleransi_lurus * 2.5):
             return "left"
-        elif norm_std_right < 0.02 and norm_std_left > 0.10:
+        elif std_right <= toleransi_lurus and std_left > (toleransi_lurus * 2.5):
             return "right"
-        elif norm_std_left < 0.02 and norm_std_right < 0.02:
+        elif std_left <= toleransi_lurus and std_right <= toleransi_lurus:
+            # Justify hanya jika rata sempurna di kedua sisi (sangat jarang di komik)
             return "justify"
         else:
             return "center"
