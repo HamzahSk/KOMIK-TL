@@ -4,8 +4,8 @@ URLMANGA = [
 ] # https://bbato.com/manga/soulbound"] 
 
 URLCHAPTER = [
-    "https://vymanga.com/read/not-blossom/2739011",
-  #  "https://vymanga.com/read/reverse-thinking/2853358",
+    #"https://vymanga.com/read/not-blossom/2739011",
+    "https://vymanga.com/read/reverse-thinking/2853358",
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking
