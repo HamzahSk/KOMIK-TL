@@ -89,11 +89,9 @@ class Typesetter:
                 binary = cv2.bitwise_not(binary)
 
             h, w = binary.shape
-            # Ambil bagian 25% atas dan 25% bawah dari teks
             top_part = binary[0 : int(h * 0.25), :]
             bottom_part = binary[int(h * 0.75) : h, :]
 
-            # Hitung pusat massa (center of mass) horizontal (sumbu X)
             top_coords = np.where(top_part > 0)[1]
             bottom_coords = np.where(bottom_part > 0)[1]
 
@@ -103,8 +101,6 @@ class Typesetter:
             top_mean = np.mean(top_coords)
             bottom_mean = np.mean(bottom_coords)
 
-            # Pada font Italic, bagian atas huruf bergeser lebih ke kanan dibanding bagian bawah
-            # Rasio pergeseran > 4% dari lebar box menandakan teks tersebut Italic
             slant_ratio = (top_mean - bottom_mean) / max(1, w)
             return slant_ratio > 0.04
         except Exception:
@@ -113,8 +109,8 @@ class Typesetter:
     @staticmethod
     def _estimate_stroke_weight(pil_img, box):
         """
-        Menghitung estimasi ketebalan huruf (stroke weight) secara lebih ketat
-        menggunakan Median Distance Transform dan rasio kepadatan piksel.
+        Menghitung estimasi ketebalan huruf (stroke weight) menggunakan
+        Median Distance Transform dan rasio kepadatan piksel.
         """
         try:
             crop = pil_img.crop((
@@ -128,7 +124,6 @@ class Typesetter:
             if img_np.size == 0 or img_np.shape[0] < 5 or img_np.shape[1] < 5:
                 return 0.08, 0.0
 
-            # Thresholding OTSU untuk memisahkan teks dan background
             _, binary = cv2.threshold(img_np, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
             if np.sum(binary == 255) > np.sum(binary == 0):
                 binary = cv2.bitwise_not(binary)
@@ -138,12 +133,10 @@ class Typesetter:
             if len(stroke_pixels) == 0:
                 return 0.08, 0.0
                 
-            # 1. PERBAIKAN: Gunakan Median (50th percentile) bukan ke-80 agar tidak terpicu sudut huruf
             avg_stroke_thickness = np.median(stroke_pixels) * 2.0
             box_height = img_np.shape[0]
             stroke_ratio = avg_stroke_thickness / max(1, box_height)
 
-            # 2. TAMBAHAN: Hitung kepadatan teks (berapa % area box yang terisi huruf)
             text_density = np.sum(binary > 0) / float(binary.size)
 
             return stroke_ratio, text_density
@@ -183,16 +176,14 @@ class Typesetter:
                 if path:
                     return path
 
-        # 3. PERBAIKAN CEK BOLD: Harus memenuhi KEDUA syarat (Ketebalan DAN Kepadatan)
+        # 3. CEK BOLD: Harus memenuhi kedua syarat (Ketebalan DAN Kepadatan)
         is_bold_weight = False
         if pil_img is not None:
             stroke_weight, density = Typesetter._estimate_stroke_weight(pil_img, box)
-            # Threshold dinaikkan ke >= 0.20 DAN kepadatan huruf harus cukup pekat (>= 0.22)
             if stroke_weight >= 0.20 and density >= 0.22:
                 is_bold_weight = True
 
         has_exclamation = "!" in text
-        # Tanda seru (!) juga diperketat: hanya jadi Bold kalau ukurannya memang besar (> 45)
         if is_bold_weight or (has_exclamation and font_size_est > 45 and len(words) <= 3):
             for name in FONT_BOLD:
                 path = Typesetter._resolve_font(name)
@@ -214,15 +205,10 @@ class Typesetter:
         return bb[3] - bb[1] if bb else font.size
 
     # ------------------------------------------------------------------
-    # PERBAIKAN 1: Word-Wrapping dengan Pemenggalan Kata (Hyphenation '-')
+    # PERBAIKAN 1: Word-Wrapping dengan Pemenggalan Kata ('-')
     # ------------------------------------------------------------------
     @staticmethod
     def _wrap_text_with_hyphens(words, font, max_width):
-        """
-        Membungkus teks berdasarkan batas lebar nyata (max_width).
-        Jika ada kata yang melampaui lebar kotak, kata tersebut PAKSA dipenggal
-        menggunakan tanda hubung '-' agar font tidak perlu dikecilkan.
-        """
         if not words:
             return []
 
@@ -230,20 +216,16 @@ class Typesetter:
         cur_line = []
 
         for w in words:
-            # Uji coba kalau kata dimasukkan ke baris saat ini
             test_line = " ".join(cur_line + [w]) if cur_line else w
             
             if Typesetter._text_width(test_line, font) <= max_width:
                 cur_line.append(w)
             else:
-                # Jika baris sudah terisi kata lain, simpan dulu baris tersebut
                 if cur_line:
                     lines.append(" ".join(cur_line))
                     cur_line = []
 
-                # Cek apakah 1 kata 'w' ini sendiri lebih lebar dari kotak dialog (max_width)
                 if Typesetter._text_width(w, font) > max_width:
-                    # POTONG KATA PER KARAKTER DENGAN TANDA '-'
                     part_word = ""
                     for char in w:
                         test_part = part_word + char + "-"
@@ -268,22 +250,19 @@ class Typesetter:
     @staticmethod
     def _expand_to_bubble_bounds(img_bgr, text_box):
         """
-        Mengekspansi koordinat bounding box OCR hingga mencapai tepi gelembung kata
-        untuk mendapatkan ukuran area gambar yang sebenarnya.
+        Mengekspansi koordinat bounding box OCR hingga mendekati tepi gelembung kata,
+        dan menyisakan safety padding agar teks tidak menabrak outline hitam.
         """
         h, w = img_bgr.shape[:2]
         x1, y1, x2, y2 = map(int, text_box)
 
-        # Batasi eksplorasi maksimal 80 px ke tiap arah agar tidak salah ambil panel
         max_expand = 80
-        
-        # Konversi ke Grayscale dan threshold untuk memisahkan balon putih dengan garis outline hitam
         gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
         _, thresh = cv2.threshold(gray, 215, 255, cv2.THRESH_BINARY)
 
         # Ekspansi ke Kiri
         while x1 > 0 and (text_box[0] - x1) < max_expand:
-            if np.mean(thresh[y1:y2, x1 - 1]) < 180: # Terbentur garis/background gelap
+            if np.mean(thresh[y1:y2, x1 - 1]) < 180:
                 break
             x1 -= 1
 
@@ -305,14 +284,20 @@ class Typesetter:
                 break
             y2 += 1
 
+        # Safety padding ke dalam agar kotak gelembung tidak tepat di garis outline hitam
+        x1 = min(int(text_box[0]), x1 + 6)
+        y1 = min(int(text_box[1]), y1 + 8)
+        x2 = max(int(text_box[2]), x2 - 6)
+        y2 = max(int(text_box[3]), y2 - 8)
+
         return [x1, y1, x2, y2]
 
     @staticmethod
     def _fit_font_size(text, font_path, box, img_bgr=None, max_font=140, min_font=13):
         """
-        Menyesuaikan ukuran font secara presisi terhadap luas balon kata.
+        Menyesuaikan ukuran font secara presisi terhadap luas balon kata
+        serta mencegah teks terpotong di batas atas dan bawah gelembung.
         """
-        # 1. Gunakan bounds gelembung nyata jika citra latar tersedia
         if img_bgr is not None:
             bubble_box = Typesetter._expand_to_bubble_bounds(img_bgr, box)
         else:
@@ -323,21 +308,24 @@ class Typesetter:
 
         words = text.split()
         if not words:
-            return None, 0, min_font, ImageFont.load_default(), 0
+            return None, 0, min_font, ImageFont.load_default(), 0, bubble_box
 
-        # 2. Gunakan rasio aman 84% agar teks memiliki padding visual yang elegan
-        #    dan tidak menempel pada garis tepi balon kata.
+        # Rasio lebar 84%, rasio tinggi 76% (mencegah teks terpotong di balon oval)
         target_w = int(bw * 0.84)
-        target_h = int(bh * 0.84)
+        target_h = int(bh * 0.76)
 
         best_result = None
         lo = min_font
-        hi = min(max_font, int(bh * 0.70))  # Cegah ukuran huruf tunggal melebihi 70% tinggi balon
+        hi = min(max_font, int(bh * 0.60))
 
         while lo <= hi:
             mid = (lo + hi) // 2
             try:
-                font = ImageFont.truetype(font_path, mid) if font_path and os.path.exists(font_path) else ImageFont.load_default()
+                font = (
+                    ImageFont.truetype(font_path, mid)
+                    if font_path and os.path.exists(font_path)
+                    else ImageFont.load_default()
+                )
             except Exception:
                 font = ImageFont.load_default()
 
@@ -351,19 +339,22 @@ class Typesetter:
             total_h = (len(lines) * single_line_h) + ((len(lines) - 1) * line_spacing)
             max_lw = max(Typesetter._text_width(l, font) for l in lines)
 
-            # Evaluasi: Harus muat di dalam target_w DAN target_h
             if max_lw <= target_w and total_h <= target_h:
                 best_result = (lines, total_h, mid, font, max_lw, bubble_box)
-                lo = mid + 1  # Coba perbesar untuk memaksimalkan ruang gelembung
+                lo = mid + 1
             else:
-                hi = mid - 1  # Kurangi ukuran karena melampaui batas
+                hi = mid - 1
 
         if best_result is not None:
-            return best_result[:5]  # Kembalikan standar tuple: (lines, total_h, mid, font, max_lw)
+            return best_result
 
-        # Fallback ke font minimum jika gelembung sangat kecil
+        # Fallback ke font minimum jika gelembung terlalu kecil
         try:
-            font = ImageFont.truetype(font_path, min_font) if font_path and os.path.exists(font_path) else ImageFont.load_default()
+            font = (
+                ImageFont.truetype(font_path, min_font)
+                if font_path and os.path.exists(font_path)
+                else ImageFont.load_default()
+            )
         except Exception:
             font = ImageFont.load_default()
             
@@ -373,17 +364,13 @@ class Typesetter:
         total_h = (len(lines) * single_line_h) + (max(0, len(lines) - 1) * line_spacing)
         max_lw = max((Typesetter._text_width(l, font) for l in lines), default=0)
         
-        return lines, total_h, min_font, font, max_lw
+        return lines, total_h, min_font, font, max_lw, bubble_box
 
     # ------------------------------------------------------------------
     # PERBAIKAN 2: Inpaint Mask Lebih Bersih Menghapus Bekas Garis/Shadow
     # ------------------------------------------------------------------
     @staticmethod
     def _build_inpaint_mask(img_bgr, text_blocks):
-        """
-        Menghapus huruf beserta stroke/drop-shadow-nya sampai bersih sempurna
-        menggunakan Canny Edge dan penambalan kontur tanpa merusak tepi luar balon kata.
-        """
         gray = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2GRAY)
         mask = np.zeros(img_bgr.shape[:2], dtype=np.uint8)
 
@@ -397,23 +384,21 @@ class Typesetter:
                 continue
 
             roi_gray = gray[y1:y2, x1:x2]
-
-            # 1. Cari garis tegas (huruf) menggunakan Canny Edge Detection
             edges = cv2.Canny(roi_gray, 50, 150)
 
-            # 2. Tebalkan garis tersebut agar outline (stroke) putih/shadow ikut tertutup
             kernel = np.ones((5, 5), np.uint8)
             dilated = cv2.dilate(edges, kernel, iterations=2)
 
-            # 3. Isi lubang di dalam huruf (seperti bagian dalam huruf O, A, P, D, dll)
             contours, _ = cv2.findContours(dilated, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
             cv2.drawContours(dilated, contours, -1, 255, -1)
 
-            # Tempelkan bentuk persis hurufnya ke mask utama
             mask[y1:y2, x1:x2] = cv2.bitwise_or(mask[y1:y2, x1:x2], dilated)
 
         return mask
 
+    # ==================================================================
+    # METHOD APPLY_TEXT LENGKAP
+    # ==================================================================
     @staticmethod
     def apply_text(pil_img, text_blocks):
         """Pipeline: filter -> inpaint -> typeset."""
@@ -432,14 +417,13 @@ class Typesetter:
 
         text_blocks = valid
 
-        # --- INPAINTING (DIPERBAIKI) ---
+        # --- INPAINTING ---
         img_np = np.array(pil_img.convert("RGB"))
         img_bgr = cv2.cvtColor(img_np, cv2.COLOR_RGB2BGR)
 
         inpaint_mask = Typesetter._build_inpaint_mask(img_bgr, text_blocks)
 
         if np.any(inpaint_mask):
-            # Menggunakan INPAINT_NS dengan radius 4 px agar sapuan penambalan mulus
             inpainted_bgr = cv2.inpaint(img_bgr, inpaint_mask, inpaintRadius=4, flags=cv2.INPAINT_NS)
         else:
             inpainted_bgr = img_bgr
@@ -462,14 +446,23 @@ class Typesetter:
             if font_path is None:
                 font_path = Typesetter._resolve_font(FONT_REGULAR)
 
-            result = Typesetter._fit_font_size(display_text, font_path, box, img_bgr=inpainted_bgr)
+            result = Typesetter._fit_font_size(
+                display_text, font_path, box, img_bgr=inpainted_bgr
+            )
             if result is None:
                 continue
-            lines, total_height, font_size, font, max_line_w = result
+            
+            # Unpack 6 elemen output dari _fit_font_size
+            lines, total_height, font_size, font, max_line_w, bubble_box = result
 
             pad = max(10, int(font_size * 0.2))
-            canvas_w = bw + pad * 2
-            canvas_h = bh + pad * 2
+            
+            # Hitung ukuran gelembung nyata
+            bw_real = bubble_box[2] - bubble_box[0]
+            bh_real = bubble_box[3] - bubble_box[1]
+
+            canvas_w = bw_real + pad * 2
+            canvas_h = bh_real + pad * 2
             txt_canvas = Image.new("RGBA", (canvas_w, canvas_h), (0, 0, 0, 0))
             txt_draw = ImageDraw.Draw(txt_canvas)
 
@@ -498,11 +491,13 @@ class Typesetter:
             if abs(angle) > 3:
                 txt_canvas = txt_canvas.rotate(-angle, expand=True, resample=Image.BICUBIC)
 
-            paste_x = box[0] + (bw - txt_canvas.width) // 2
-            paste_y = box[1] + (bh - txt_canvas.height) // 2
+            # Paste tepat di tengah-tengah gelembung (bubble_box), bukan boks OCR
+            paste_x = bubble_box[0] + (bw_real - txt_canvas.width) // 2
+            paste_y = bubble_box[1] + (bh_real - txt_canvas.height) // 2
             pil_img.paste(txt_canvas, (paste_x, paste_y), txt_canvas)
 
         return pil_img
+
 # ======================================================================
 # Helper utilities (download, merge, slice) – kept largely unchanged
 # ======================================================================
