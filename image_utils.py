@@ -68,37 +68,6 @@ class Typesetter:
         return path if os.path.exists(path) else None
 
     @staticmethod
-    def _detect_alignment(block):
-        """
-        Mendeteksi jenis perataan teks dengan mengukur standar deviasi
-        relatif terhadap lebar kotak, sehingga aman untuk resolusi gambar apa pun.
-        """
-        lines_info = block.get("lines_info", [])
-        if len(lines_info) <= 1:
-            return "center"
-
-        x_lefts = [l["box"][0] for l in lines_info]
-        x_rights = [l["box"][2] for l in lines_info]
-
-        box = block.get("box", [0, 0, 1, 1])
-        bw = max(1, box[2] - box[0])
-
-        # Hitung standar deviasi relatif terhadap lebar blok teks
-        norm_std_left = np.std(x_lefts) / bw
-        norm_std_right = np.std(x_rights) / bw
-
-        # Default komik adalah rata tengah (Center).
-        # Hanya ubah ke Kiri/Kanan jika benar-benar rata secara ekstrem di satu sisi saja.
-        if norm_std_left < 0.05 and norm_std_right > 0.08:
-            return "left"
-        elif norm_std_right < 0.05 and norm_std_left > 0.08:
-            return "right"
-        elif norm_std_left < 0.04 and norm_std_right < 0.04:
-            return "justify"
-        else:
-            return "center"
-
-    @staticmethod
     def _is_italic_slant(pil_img, box):
         """
         Mendeteksi kemiringan huruf setelah membersihkan noise background (screentone).
@@ -139,11 +108,45 @@ class Typesetter:
             return slant_ratio > 0.03
         except Exception:
             return False
+            
+    @staticmethod
+    def _detect_alignment(block):
+        """
+        Mendeteksi jenis perataan teks. Dirombak agar Rata Tengah (Center) 
+        menjadi default mutlak untuk komik.
+        """
+        lines_info = block.get("lines_info", [])
+        
+        # PERBAIKAN: Kalau cuma 1 atau 2 baris, hampir mustahil butuh rata kiri/kanan.
+        # Langsung paksa Center agar tidak salah deteksi.
+        if len(lines_info) <= 2:
+            return "center"
+
+        x_lefts = [l["box"][0] for l in lines_info]
+        x_rights = [l["box"][2] for l in lines_info]
+
+        box = block.get("box", [0, 0, 1, 1])
+        bw = max(1, box[2] - box[0])
+
+        norm_std_left = np.std(x_lefts) / bw
+        norm_std_right = np.std(x_rights) / bw
+
+        # PERBAIKAN: Syarat Rata Kiri/Kanan diperketat ekstrem!
+        # Harus benar-benar lurus sempurna (< 0.02) dan sisi seberangnya sangat berantakan (> 0.10)
+        if norm_std_left < 0.02 and norm_std_right > 0.10:
+            return "left"
+        elif norm_std_right < 0.02 and norm_std_left > 0.10:
+            return "right"
+        elif norm_std_left < 0.02 and norm_std_right < 0.02:
+            return "justify"
+        else:
+            return "center"
 
     @staticmethod
-    def _estimate_stroke_weight(pil_img, box):
+    def _estimate_stroke_weight(pil_img, box, line_height):
         """
-        Menghitung ketebalan huruf setelah membersihkan noise background.
+        Menghitung ketebalan huruf dibandingkan dengan TINGGI SATU BARIS,
+        bukan tinggi seluruh blok teks.
         """
         try:
             crop = pil_img.crop((
@@ -157,7 +160,6 @@ class Typesetter:
             if img_np.size == 0 or img_np.shape[0] < 5 or img_np.shape[1] < 5:
                 return 0.08, 0.0
 
-            # BERSIHKAN NOISE: Blur ringan untuk menghilangkan garis background
             img_blur = cv2.medianBlur(img_np, 3)
 
             _, binary = cv2.threshold(img_blur, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
@@ -170,8 +172,9 @@ class Typesetter:
                 return 0.08, 0.0
                 
             avg_stroke_thickness = np.median(stroke_pixels) * 2.0
-            box_height = img_np.shape[0]
-            stroke_ratio = avg_stroke_thickness / max(1, box_height)
+            
+            # PERBAIKAN: Dibagi line_height, bukan tinggi gambar crop!
+            stroke_ratio = avg_stroke_thickness / max(1, line_height)
 
             text_density = np.sum(binary > 0) / float(binary.size)
 
@@ -184,18 +187,20 @@ class Typesetter:
         text = block.get("text", "")
         box = block["box"]
         bh = box[3] - box[1]
-        font_size_est = int(block.get("orig_line_height", bh) * 0.9)
+        
+        # Ambil tinggi aslinya per baris dari OCR Engine
+        orig_line_height = block.get("orig_line_height", bh)
+        font_size_est = int(orig_line_height * 0.9)
+        
         words = text.split()
         is_single = len(words) <= 1
 
-        # 1. Cek SFX / Kata tunggal berukuran besar
         if is_single and font_size_est > 45:
             for name in FONT_SFX:
                 path = Typesetter._resolve_font(name)
                 if path:
                     return path
 
-        # 2. CEK ITALIC TERLEBIH DAHULU
         angle = abs(block.get("angle", 0.0))
         is_italic = angle > 6.0
         if not is_italic and pil_img is not None:
@@ -212,15 +217,21 @@ class Typesetter:
                 if path:
                     return path
 
-        # 3. CEK BOLD: Harus memenuhi kedua syarat (Ketebalan DAN Kepadatan)
         is_bold_weight = False
         if pil_img is not None:
-            stroke_weight, density = Typesetter._estimate_stroke_weight(pil_img, box)
-            # Threshold disesuaikan ke ketebalan >= 0.18 dan kepadatan >= 0.18
-            if stroke_weight >= 0.18 and density >= 0.18:
+            # PERBAIKAN: Kirimkan orig_line_height sebagai parameter ke-3
+            stroke_weight, density = Typesetter._estimate_stroke_weight(pil_img, box, orig_line_height)
+            
+            # Karena pembaginya sekarang akurat (1 baris), threshold 0.15 sudah mendeteksi Bold dengan sangat baik
+            if stroke_weight >= 0.15:
                 is_bold_weight = True
 
-        # 4. Fallback ke Regular
+        if is_bold_weight:
+            for name in FONT_BOLD:
+                path = Typesetter._resolve_font(name)
+                if path:
+                    return path
+
         reg = Typesetter._resolve_font(FONT_REGULAR)
         return reg if reg else None
 
