@@ -9,29 +9,23 @@ URLCHAPTER = [
 
 FONT_PATH = "CC Wild Words Roman.ttf"
 
-SELF_INSTRUCTION = """
-Terjemahkan teks komik hasil OCR ini ke bahasa Indonesia yang benar-benar natural dan hidup.
-Dialog harus seperti percakapan asli orang Indonesia—tangkap emosinya: marah, panik, sedih, gemas, sinis, dsb.
-Jangan terjemahkan kata per kata atau kaku seperti mesin. Jika ada typo/teks rusak, tafsirkan maksudnya
-dari bunyi dan konteks panel komik, lalu terjemahkan maknanya dengan tepat. Jangan dibiarkan aneh.
+PROMPT_TRANSLATOR = (
+    "Terjemahkan teks komik hasil OCR ini ke bahasa Indonesia yang natural, hidup, dan emosional, "
+    "seolah komik ini aslinya berbahasa Indonesia. Dialog dan monolog harus mengalir seperti percakapan nyata, "
+    "bukan textbook atau terjemahan kaku. Hindari kata 'lu/gue' atau slang berlebihan yang terkesan tidak profesional; "
+    "gunakan 'aku/kamu/kau' atau 'saya/Anda' sesuai konteks karakter. SFX wajib diterjemahkan ke padanan alami Indonesia "
+    "(contoh: BAM→DOR, THUMP→DEG, SLAM→BRAK, GASP→HAAH, CREAK→KRIET, SPLASH→BYUR). Jika ada typo atau teks rusak "
+    "akibat OCR, tafsirkan maksudnya berdasarkan bunyi dan konteks panel, lalu terjemahkan maknanya. "
+    "Nama tokoh dan istilah khusus jangan diubah. Jangan tambahkan simbol, emoji, atau format apa pun "
+    "yang tidak ada di teks asli."
+)
 
-KHUSUS SFX: terjemahkan ke bunyi alami bahasa Indonesia, bukan deskripsi.
-Contoh:
-BAM→DOR
-SLAM→BRAK
-THUMP→DEG
-WHOOSH→SYUUUT
-GASP→HAAH
-CREAK→KRIET
-SPLASH→BYUR
-GRAB→SREET
-BOOM→DUAR
-RUSTLE→GRESIK
-CLAP→PROK
-STEP→TAP
-STARE→NATAP
-
-SFX yang tampak seperti kata kerja biasa pun harus dikenali dan diubah jadi bunyi, bukan diterjemahkan harfiah.
-Nama tokoh/tempat tetap persis aslinya.
-Jangan tambahkan simbol, emoji, bullet, atau format apa pun yang tidak ada di teks sumber.
-"""
+# [BARU] Aturan format dan pemisahan batch untuk AI
+PROMPT_FORMAT_RULES = (
+    "Di bawah ini ada kumpulan teks komik yang dipisahkan oleh '{separator}'. "
+    "Teks-teks ini bisa berupa dialog bubble, SFX, atau campuran dari beberapa panel. "
+    "Dialog antar bubble mungkin masih dalam satu percakapan yang sama—pastikan terjemahannya tetap nyambung "
+    "secara alur dan karakter. Cermati dan bedakan mana dialog dan mana SFX sebelum menerjemahkan. "
+    "Hasil akhir harus berupa teks terjemahan *BAHASA INDONESIA* yang dipisahkan oleh '{separator}' tanpa tambahan "
+    "penjelasan, basa-basi, atau penomoran apa pun."
+)
