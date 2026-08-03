@@ -9,6 +9,7 @@ URLCHAPTER = [
 
 FONT_PATH = "CC Wild Words Roman.ttf"
 
+
 PROMPT_TRANSLATOR = (
     "Terjemahkan teks komik hasil OCR ini ke bahasa Indonesia yang natural, hidup, dan emosional, "
     "seolah komik ini aslinya berbahasa Indonesia. Dialog dan monolog harus mengalir seperti percakapan nyata, "
