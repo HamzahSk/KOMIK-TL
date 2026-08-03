@@ -50,6 +50,16 @@ class OCREngine:
             xs = [p[0] / 2.0 for p in bbox]
             ys = [p[1] / 2.0 for p in bbox]
 
+            # --- PERBAIKAN: Hitung tinggi asli huruf menggunakan jarak poligon ---
+            if len(xs) >= 4:
+                # Titik 0=Kiri Atas, 3=Kiri Bawah, 1=Kanan Atas, 2=Kanan Bawah
+                h_kiri = math.hypot(xs[3] - xs[0], ys[3] - ys[0])
+                h_kanan = math.hypot(xs[2] - xs[1], ys[2] - ys[1])
+                true_height = (h_kiri + h_kanan) / 2.0
+            else:
+                true_height = max(ys) - min(ys)
+            # ------------------------------------------------------------------
+
             # Hitung sudut kemiringan (Titik Kanan Atas - Titik Kiri Atas)
             dx = bbox[1][0] - bbox[0][0]
             dy = bbox[1][1] - bbox[0][1]
@@ -89,7 +99,8 @@ class OCREngine:
                     "box": [x_min, y_min, x_max, y_max],
                     "angle": angle,            # <-- Menyimpan nilai kemiringan
                     "is_italic": is_italic,    # <-- Simpan status italic
-                    "is_bold": is_bold         # <-- Simpan status bold
+                    "is_bold": is_bold,        # <-- Simpan status bold
+                    "true_height": true_height # <-- TAMBAHKAN BARIS INI
                 })
 
         return self._merge_dialog_bubbles(raw_lines)
@@ -129,7 +140,7 @@ class OCREngine:
                 merged.append({
                     "text": gabungan_teks,
                     "box": [min_x, min_y, max_x, max_y],
-                    "orig_line_height": sum(b[3] - b[1] for b in group_boxes) / len(group_boxes),
+                    "orig_line_height": sum(l.get('true_height', b[3] - b[1]) for l, b in zip(group_lines, group_boxes)) / len(group_boxes),
                     "angle": sum(group_angles) / len(group_angles),
                     # Jika ada setidaknya 1 baris di dalam balon yang terdeteksi italic/bold, anggap seluruh balon italic/bold
                     "is_italic": any(l['is_italic'] for l in group_lines),

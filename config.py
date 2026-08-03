@@ -1,7 +1,8 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-    "https://vymanga.com/read/creating-a-hidden-ending/3182642"
+    "https://vymanga.com/read/creating-a-hidden-ending/3182642",
+    "https://vymanga.com/read/reverse-thinking/2853358"
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking
@@ -9,9 +10,10 @@ URLCHAPTER = [
 FONT_PATH = "font"
 
 FONT_NORMAL = "CC Wild Words Roman.ttf"
-FONT_BOLD = "CC Wild Words Bold Italic.ttf"
+FONT_BOLD = "Oxanium-Bold.ttf"
 FONT_ITALIC = "CC Wild Words Italic.ttf"
 FONT_SFX = "ComicNoteSmooth.ttf"
+FONT_SISTEM = "Oxanium-Bold.ttf"
 
 PROMPT_TRANSLATOR = (
     "Terjemahkan teks komik hasil OCR ini ke bahasa Indonesia yang natural, hidup, dan emosional, "
