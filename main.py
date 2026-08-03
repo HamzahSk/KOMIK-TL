@@ -19,7 +19,16 @@ def main():
     mangas = [u for u in config.URLMANGA if u.strip()]
     chapters = [u for u in config.URLCHAPTER if u.strip()]
     
-    font_path = getattr(config, 'FONT_PATH', 'CC Wild Words Roman.ttf')
+    # --- MULAI: Siapkan Dictionary Font dari config.py ---
+    font_dir = getattr(config, 'FONT_PATH', 'font')
+    fonts_dict = {
+        'normal': os.path.join(font_dir, getattr(config, 'FONT_NORMAL', 'CC Wild Words Roman.ttf')),
+        'bold': os.path.join(font_dir, getattr(config, 'FONT_BOLD', 'CC Wild Words Bold Italic.ttf')),
+        'italic': os.path.join(font_dir, getattr(config, 'FONT_ITALIC', 'CC Wild Words Italic.ttf')),
+        'sfx': os.path.join(font_dir, getattr(config, 'FONT_SFX', 'ComicNoteSmooth.ttf'))
+    }
+    # --- AKHIR ---
+
     
     if not mangas and not chapters:
         print("[System] URL kosong di config.py. Tidak ada yang diproses.")
@@ -224,7 +233,8 @@ def main():
                 for b in blocks:
                     b['colors'] = ImageProcessor.detect_colors(img, b['box'])
                     
-                final_img = Typesetter.apply_text(img, blocks, font_path)
+                final_img = Typesetter.apply_text(img, blocks, fonts_dict)
+
                 final_img.save(final_path, format="WEBP", quality=80)
             except Exception as e:
                 print(f"Gagal memproses typesetting halaman {idx+1}: {e}")

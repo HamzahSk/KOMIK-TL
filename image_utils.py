@@ -64,7 +64,11 @@ class ImageProcessor:
 
 class Typesetter:
     @staticmethod
-    def apply_text(pil_img, text_blocks, font_path="arial.ttf", sfx_font_path="Dark Poestry.ttf"):
+    def apply_text(pil_img, text_blocks, fonts_dict=None):
+        if fonts_dict is None:
+            # Fallback aman jika tidak ada font
+            fonts_dict = {'normal': 'arial.ttf', 'bold': 'arial.ttf', 'italic': 'arial.ttf', 'sfx': 'arial.ttf'}
+
         
         # ==========================================
         # 0. FASE FILTERING (Menyaring Teks)
@@ -158,9 +162,28 @@ class Typesetter:
             
             is_sfx = is_single_word and font_size > 50
             
-            active_font_path = sfx_font_path if is_sfx and os.path.exists(sfx_font_path) else font_path
+            # --- MULAI: Logika Pemilihan Font ---
+            is_italic = block.get('is_italic', False)
+            is_bold = block.get('is_bold', False)
+            
+            if is_sfx:
+                active_font_path = fonts_dict['sfx']
+            elif is_bold:
+                # Prioritaskan bold (biasanya untuk penekanan berteriak di komik)
+                active_font_path = fonts_dict['bold']
+            elif is_italic:
+                # Gunakan italic untuk monolog / dalam hati
+                active_font_path = fonts_dict['italic']
+            else:
+                active_font_path = fonts_dict['normal']
+                
+            # Keamanan: Jika font yang dipilih ternyata file-nya tidak ada di folder, balik ke normal
+            if not os.path.exists(active_font_path):
+                active_font_path = fonts_dict['normal']
+            # --- AKHIR ---
  
             total_height = 0
+
             line_height = 0
             lines = []
             

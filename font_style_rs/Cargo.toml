@@ -1,0 +1,18 @@
+[package]
+name = "font_style_rs"
+version = "0.1.0"
+edition = "2021"
+description = "Pure-Rust computer-vision analyzer for italic/bold font style detection (PyO3 + rust-numpy)."
+
+[lib]
+name = "font_style_rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+numpy = "0.21"
+pyo3 = { version = "0.21", features = ["extension-module"] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
