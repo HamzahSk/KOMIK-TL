@@ -123,14 +123,10 @@ impl SplitMix64 {
     }
 }
 
-// [Biarkan kode dari atas sampai `struct SplitMix64` tetap ada, jangan dihapus]
-
 /// K-Means with k-means++ seeding and empty-cluster re-seeding.
-/// Returns `(centers, border_counts, inertia)`.
+/// Returns `(centers, pixel counts, inertia)`.
 fn kmeans(
     pixels: &[[f32; 3]],
-    h: usize,
-    w: usize,
     k: usize,
     max_iter: usize,
     rng: &mut SplitMix64,
@@ -158,6 +154,7 @@ fn kmeans(
             sum += best as f64;
         }
         if sum <= f64::EPSILON {
+            // degenerate: every pixel already matches a chosen center
             let mut idx = rng.below(n);
             let mut guard = 0usize;
             while centers.contains(&pixels[idx]) && guard < n {
@@ -209,7 +206,7 @@ fn kmeans(
             new_inertia += best as f64;
         }
 
-        // re-seed any empty cluster
+        // re-seed any empty cluster with the pixel farthest from its center
         for c in 0..k {
             if counts[c] == 0 {
                 let mut far_idx = 0usize;
@@ -255,30 +252,21 @@ fn kmeans(
         }
     }
 
-    // --- MULAI PERBAIKAN LOGIKA WARNA (BORDER DETECTION) ---
-    // Daripada mengembalikan total `counts`, kita hitung jumlah piksel
-    // di *garis tepi* gambar untuk masing-masing klaster warna.
-    let mut border_counts = vec![0u64; k];
-    
-    // Perhatikan: Karena pixels sudah disample, kita harus mengestimasi letak tepi
-    // dengan membagi panjang array dengan height dan width estimasi
-    // Agar lebih robust terhadap downsampling, kita cek label di 10% terluar dari panjang array.
-    
-    let border_margin = (n as f32 * 0.1) as usize; // 10% awal dan akhir dianggap border/tepi
-
-    for i in 0..n {
-       // Jika pixel berada di awal, akhir, atau di pinggiran
-       if i < border_margin || i > n - border_margin {
-            let lab = labels[i];
-            border_counts[lab] += 1;
-       }
-    }
-    // --- AKHIR PERBAIKAN LOGIKA WARNA ---
-
-    Some((centers, border_counts, inertia))
+    Some((centers, counts, inertia))
 }
 
 /// Detect text vs background/stroke colors of an RGB crop using K-Means (K=2).
+///
+/// Args:
+///     image: (H, W, 3) RGB or (H, W, 4) RGBA NumPy array (uint8 preferred).
+///     max_iter: max K-Means iterations per restart.
+///     restarts: number of K-Means restarts; the lowest-inertia result wins.
+///     min_contrast: minimum summed RGB distance between text and stroke
+///         colors; below this the pair is considered too similar and the
+///         safe black-on-white default is returned.
+///
+/// Returns:
+///     Tuple `(text_color, stroke_color)`, each `(r, g, b)`.
 #[pyfunction]
 #[pyo3(signature = (image, max_iter = 40, restarts = 3, min_contrast = 50.0))]
 pub fn detect_colors<'py>(
@@ -292,10 +280,6 @@ pub fn detect_colors<'py>(
     if pixels.len() < 3 {
         return default_colors(py);
     }
-    
-    // Estimasi dummy h dan w karena kita pakai fallback border detection di kmeans
-    let h = 0; 
-    let w = 0;
 
     let fp: Vec<[f32; 3]> = pixels
         .iter()
@@ -308,8 +292,7 @@ pub fn detect_colors<'py>(
         let mut rng = SplitMix64(
             0x9E37_79B9_7F4A_7C15 ^ (r as u64).wrapping_add(1).wrapping_mul(0xBF58_476D_1CE4_E5B9),
         );
-        // Memasukkan h dan w dummy ke dalam kmeans
-        if let Some(res) = kmeans(&fp, h, w, 2, max_iter.max(1), &mut rng) {
+        if let Some(res) = kmeans(&fp, 2, max_iter.max(1), &mut rng) {
             let better = match &best {
                 Some((_, _, inertia)) => res.2 < *inertia,
                 None => true,
@@ -320,17 +303,17 @@ pub fn detect_colors<'py>(
         }
     }
 
-    let (centers, border_counts, _) = match best {
+    let (centers, counts, _) = match best {
         Some(v) => v,
         None => return default_colors(py),
     };
 
-    // Label mayoritas di tepi gambar = Background/Stroke (bg_idx)
-    // Teks = text_idx
-    let (text_idx, bg_idx) = if border_counts[0] <= border_counts[1] {
-        (0usize, 1usize) // 1 adalah background (karena lebih banyak di border)
+    // Inside an OCR crop the bubble/background always covers more area than the
+    // glyph strokes, so text = minority cluster, stroke/background = majority.
+    let (text_idx, bg_idx) = if counts[0] <= counts[1] {
+        (0usize, 1usize)
     } else {
-        (1usize, 0usize) // 0 adalah background
+        (1usize, 0usize)
     };
 
     let t = centers[text_idx];
