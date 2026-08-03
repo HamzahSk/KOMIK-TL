@@ -57,6 +57,9 @@ class OCREngine:
             clean_text = re.sub(r'[^A-Z0-9\s.,!?\'"~-]', '', fixed_text).strip() 
             clean_text = re.sub(r'\s+', ' ', clean_text)
             
+            if re.fullmatch(r'[O0-9\s.,!?\'"~-]+', clean_text) and len(clean_text) < 6:
+                continue 
+            
             if clean_text: 
                 raw_lines.append({
                     "text": clean_text,

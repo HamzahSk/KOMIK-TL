@@ -145,7 +145,11 @@ class Typesetter:
         # ==========================================
         for block in text_blocks:
             box = block['box']
-            bw, bh = box[2] - box[0], box[3] - box[1]
+            
+            bw_original, bh_original = box[2] - box[0], box[3] - box[1]
+            bw = int(bw_original * 1.2) # Lebarkan area toleransi teks 30%
+            bh = int(bh_original * 1.1) # Tinggikan area toleransi 20%
+
             if bw < 6 or bh < 6: continue
             
             display_text = block.get('translated_text', block['text'])
