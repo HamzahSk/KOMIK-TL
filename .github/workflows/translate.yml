@@ -53,7 +53,8 @@ jobs:
         run: |
           pip install maturin numpy opencv-python
           cd font_style_rs
-          maturin develop --release
+          maturin build --release
+          pip install target/wheels/*.whl
 
       - name: Run Translator Script
         run: |

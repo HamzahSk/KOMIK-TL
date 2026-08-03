@@ -4,6 +4,7 @@ URLCHAPTER = [
     "https://vymanga.com/read/reverse-thinking/2853358",
     "https://vymanga.com/read/reverse-thinking/2574621"
 ]
+
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking
 
