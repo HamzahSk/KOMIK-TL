@@ -4,6 +4,7 @@ import requests
 import concurrent.futures
 import numpy as np
 import cv2 # Tambahkan ini di deretan import atas
+import typeset_rs # Modul Rust untuk clustering / layout / deteksi warna
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -24,42 +25,19 @@ class ImageProcessor:
         # Keamanan: Jika crop gagal atau terlalu kecil, pakai warna default hitam-putih
         if img_np.size == 0 or img_np.shape[0] < 3 or img_np.shape[1] < 3:
             return (0, 0, 0), (255, 255, 255)
-            
-        # 3. Ratakan piksel menjadi 2D array untuk K-Means
-        pixels = img_np.reshape((-1, 3)).astype(np.float32)
-        
-        # 4. Terapkan K-Means Clustering dengan K=2 (Mencari 2 warna dominan)
-        criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 10, 1.0)
-        K = 2
-        
+
+        # --- MULAI INTEGRASI RUST ---
+        # Deteksi warna teks & background/stroke via K-Means (K=2) murni di Rust
+        # (menggantikan cv2.kmeans milik OpenCV). Teks = klaster minoritas,
+        # stroke/background = klaster mayoritas. Jika kontras terlalu kecil,
+        # Rust mengembalikan hitam-putih sebagai fallback aman.
         try:
-            _, labels, centers = cv2.kmeans(pixels, K, None, criteria, 10, cv2.KMEANS_RANDOM_CENTERS)
-            
-            # Ubah format hasil warna kembali ke integer
-            centers = np.uint8(centers)
-            
-            # Hitung jumlah piksel untuk masing-masing kelompok warna
-            counts = np.bincount(labels.flatten())
-            
-            # Logika: Di dalam bounding box OCR, area background/bubble biasanya
-            # memakan ruang lebih banyak daripada garis huruf itu sendiri.
-            # Jadi, warna dengan jumlah piksel terbanyak = Background/Stroke
-            # Warna dengan jumlah piksel lebih sedikit = Teks
-            bg_idx = np.argmax(counts)
-            text_idx = 1 - bg_idx 
-            
-            text_color = tuple(int(c) for c in centers[text_idx])
-            stroke_color = tuple(int(c) for c in centers[bg_idx])
-            
-            # Pastikan teks tetap kontras (jika warnanya ternyata sama/mirip, jadikan hitam putih)
-            if sum(abs(t - b) for t, b in zip(text_color, stroke_color)) < 50:
-                return (0, 0, 0), (255, 255, 255)
-                
-            return text_color, stroke_color
-            
+            text_color, stroke_color = typeset_rs.detect_colors(img_np)
+            return tuple(text_color), tuple(stroke_color)
         except Exception as e:
             # Fallback jika perhitungan gagal
             return (0, 0, 0), (255, 255, 255)
+        # --- AKHIR INTEGRASI RUST ---
 
 
 class Typesetter:
@@ -156,10 +134,24 @@ class Typesetter:
             words = display_text.upper().split()
             is_single_word = len(words) <= 1
             
-            max_font_limit = 150 
-            font_size = int(block.get('orig_line_height', bh) * 0.9)
+            max_font_limit = 150
+
+            # --- MULAI INTEGRASI RUST ---
+            # Estimasi ukuran font ideal dari Rust: memperhitungkan panjang
+            # teks, jumlah kata, lebar/tinggi balon, serta rasio lebar karakter
+            # dan tinggi baris, sehingga teks tidak meluap keluar batas aman.
+            font_size = int(typeset_rs.estimate_font_size(
+                len(display_text),
+                len(words),
+                bw,
+                bh,
+                base_font_size=block.get('orig_line_height', bh) * 0.9,
+                max_font_size=max_font_limit,
+                min_font_size=10,
+            ))
+            # --- AKHIR INTEGRASI RUST ---
             font_size = max(10, min(max_font_limit, font_size)) 
-            
+
             is_sfx = is_single_word and font_size > 50
             
             # --- MULAI: Logika Pemilihan Font ---
@@ -253,7 +245,15 @@ class Typesetter:
 
             orig_bw = box[2] - box[0]
 
-            pad_canvas = max(15, int(font_size * 0.3))
+            # --- MULAI INTEGRASI RUST ---
+            # Margin aman (safe padding) dari Rust agar teks + stroke outline
+            # tetap berada di dalam batas aman balon percakapan.
+            pad_l, pad_r, pad_t, pad_b = typeset_rs.safe_padding(
+                font_size, min_padding=15.0, padding_ratio=0.3
+            )
+            pad_canvas = int(max(pad_l, pad_r, pad_t, pad_b))
+            # --- AKHIR INTEGRASI RUST ---
+
             canvas_w = orig_bw + (pad_canvas * 2)
             canvas_h = bh + (pad_canvas * 2)
             

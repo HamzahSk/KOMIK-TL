@@ -1,0 +1,19 @@
+[package]
+name = "typeset_rs"
+version = "0.1.0"
+edition = "2021"
+description = "Pure-Rust pixel-level processing for comic/manhwa auto-typesetting: spatial text clustering (Union-Find), layout/font-size & safe-margin estimation, and K-Means color/stroke extraction (PyO3 + rust-numpy)."
+
+[lib]
+name = "typeset_rs"
+crate-type = ["cdylib"]
+
+[dependencies]
+numpy = "0.21"
+pyo3 = { version = "0.21", features = ["extension-module"] }
+ndarray = "0.15"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
