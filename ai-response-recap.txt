@@ -1,0 +1,363 @@
+[0m
+> build · deepseek-v4-flash-free
+[0m
+[0m$ [0mls -la
+total 2832
+drwxr-xr-x 5 runner runner    4096 Aug  3 03:17 .
+drwxr-xr-x 3 runner runner    4096 Aug  3 03:16 ..
+drwxr-xr-x 7 runner runner    4096 Aug  3 03:17 .git
+drwxr-xr-x 3 runner runner    4096 Aug  3 03:17 .github
+-rw-r--r-- 1 runner runner   32308 Aug  3 03:17 CC Wild Words Roman.ttf
+-rw-r--r-- 1 runner runner   21556 Aug  3 03:17 Dark Poestry.ttf
+-rw-r--r-- 1 runner runner   45748 Aug  3 03:17 Houston Comics Personal Use.ttf
+-rw-r--r-- 1 runner runner 2459722 Aug  3 03:17 KOMIK-TL.zip
+-rw-r--r-- 1 runner runner    2099 Aug  3 03:17 PROMPT.md
+-rw-r--r-- 1 runner runner      35 Aug  3 03:17 README.md
+-rw-r--r-- 1 runner runner  159900 Aug  3 03:17 Roboto-Bold.ttf
+-rw-r--r-- 1 runner runner      44 Aug  3 03:17 ai-response-recap.txt
+-rw-r--r-- 1 runner runner    7570 Aug  3 03:17 command.txt
+-rw-r--r-- 1 runner runner    1870 Aug  3 03:17 config.py
+-rw-r--r-- 1 runner runner    1450 Aug  3 03:17 config.yaml
+-rw-r--r-- 1 runner runner   28240 Aug  3 03:17 digistrip.ttf
+-rw-r--r-- 1 runner runner   15078 Aug  3 03:17 docs.txt
+drwxr-xr-x 2 runner runner    4096 Aug  3 03:17 font
+-rw-r--r-- 1 runner runner   20156 Aug  3 03:17 image_utils.py
+-rw-r--r-- 1 runner runner   10628 Aug  3 03:17 main.py
+-rw-r--r-- 1 runner runner    6007 Aug  3 03:17 ocr_engine.py
+-rw-r--r-- 1 runner runner      81 Aug  3 03:17 requirements.txt
+-rw-r--r-- 1 runner runner    9548 Aug  3 03:17 scraper.py
+-rw-r--r-- 1 runner runner    1540 Aug  3 03:17 test.py
+-rw-r--r-- 1 runner runner   10141 Aug  3 03:17 translator.py
+[0m
+[0m$ [0mgit log --oneline -5 2>/dev/null; git status 2>/dev/null | head -20
+bfcbb93 Last Sync: 2026-08-03 09:40 (Mobile)
+On branch main
+Your branch is up to date with 'origin/main'.
+
+Untracked files:
+  (use "git add <file>..." to include in what will be committed)
+	ai-response-recap.txt
+
+nothing added to commit but untracked files present (use "git add" to track)
+[0m
+[0m$ [0mgrep -n "bbox\|crop\|ndarray\|gray\|cvtColor\|text" ocr_engine.py | head -30
+23:        gray_np = cv2.cvtColor(img_resized, cv2.COLOR_BGR2GRAY)
+25:        enhanced_img = clahe.apply(gray_np)
+32:        boxes, texts = [], []
+35:            boxes, texts = out.boxes, out.txts
+41:                    texts.append(item[1])
+43:        for bbox, text in zip(boxes, texts):
+44:            if bbox is None or len(bbox) < 4: continue
+46:            xs = [p[0] / 2.0 for p in bbox]
+47:            ys = [p[1] / 2.0 for p in bbox]
+50:            dx = bbox[1][0] - bbox[0][0]
+51:            dy = bbox[1][1] - bbox[0][1]
+54:            fixed_text = text.replace('|', 'I').replace('[', 'I').replace(']', 'I').replace('{', 'I').replace('}', 'I')
+55:            fixed_text = fixed_text.upper()
+57:            clean_text = re.sub(r'[^A-Z0-9\s.,!?\'"~-]', '', fixed_text).strip() 
+58:            clean_text = re.sub(r'\s+', ' ', clean_text)
+60:            if re.fullmatch(r'[O0-9\s.,!?\'"~-]+', clean_text) and len(clean_text) < 6:
+63:            if clean_text: 
+65:                    "text": clean_text,
+84:            group_boxes, combined_text, group_angles = [base['box']], [base['text']], [base['angle']]
+118:                    combined_text.append(lines[j]['text'])
+126:            gabungan_teks = " ".join(combined_text)
+131:                    "text": gabungan_teks,
+[0m
+[0m→ [0mRead requirements.txt
+[0m
+[0m$ [0mwhich cargo rustc maturin python3 2>/dev/null; cargo --version 2>/dev/null; python3 --version
+/home/runner/.cargo/bin/cargo
+/home/runner/.cargo/bin/rustc
+/opt/hostedtoolcache/Python/3.12.13/x64/bin/python3
+cargo 1.97.1 (c980f4866 2026-06-30)
+Python 3.12.13
+[0m
+[0m$ [0mmaturin --version 2>/dev/null; pip list 2>/dev/null | grep -i -E "maturin|numpy|opencv" ; rustc --version
+numpy                  1.26.4
+opencv-python          4.11.0.86
+rustc 1.97.1 (8bab26f4f 2026-07-14)
+[0m
+[0m# [0mTodos
+[•] Create Cargo.toml (PyO3 + numpy) and pyproject.toml for maturin
+[ ] Implement lib.rs: italic (projection-profile slant) + bold (stroke width + ink density)
+[ ] Compile/verify with cargo, and smoke-test the extension from Python
+[ ] Provide Python usage snippet
+[0m
+[0m$ [0mmkdir -p font_style_rs/src
+(no output)
+[0m
+[0m← [0mWrite font_style_rs/Cargo.toml
+Wrote file successfully.
+[0m
+[0m← [0mWrite font_style_rs/pyproject.toml
+Wrote file successfully.
+[0m
+[0m← [0mWrite font_style_rs/src/lib.rs
+Wrote file successfully.
+[0m
+[0m# [0mTodos
+[✓] Create Cargo.toml (PyO3 + numpy) and pyproject.toml for maturin
+[✓] Implement lib.rs: italic (projection-profile slant) + bold (stroke width + ink density)
+[•] Compile/verify with cargo, and smoke-test the extension from Python
+[ ] Provide Python usage snippet
+[0m
+[0m$ [0mcargo check --release 2>&1 | tail -25
+--> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:561:4
+
+error[E0308]: mismatched types
+   --> src/lib.rs:310:8
+    |
+310 |     Ok(out)
+    |     -- ^^^ expected `Bound<'_, PyDict>`, found `&PyDict`
+    |     |
+    |     arguments to this enum variant are incorrect
+    |
+    = note: expected struct `pyo3::Bound<'_, PyDict>`
+            found reference `&PyDict`
+help: the type constructed contains `&PyDict` due to the type of the argument passed
+   --> src/lib.rs:310:5
+    |
+310 |     Ok(out)
+    |     ^^^---^
+    |        |
+    |        this argument influences the type of `Ok`
+note: tuple variant defined here
+   --> /rustc/8bab26f4f68e0e26f0bb7960be334d5b520ea452/library/core/src/result.rs:561:4
+
+For more information about this error, try `rustc --explain E0308`.
+warning: `font_style_rs` (lib) generated 1 warning
+error: could not compile `font_style_rs` (lib) due to 3 previous errors; 1 warning emitted
+[0m
+[0m$ [0mcargo check --release 2>&1 | grep -E "^error|^warning" | head -20
+warning: use of deprecated associated function `pyo3::types::PyDict::new`: `PyDict::new` will be replaced by `PyDict::new_bound` in a future PyO3 version
+error[E0308]: mismatched types
+error[E0308]: mismatched types
+error[E0308]: mismatched types
+warning: `font_style_rs` (lib) generated 1 warning
+error: could not compile `font_style_rs` (lib) due to 3 previous errors; 1 warning emitted
+[0m
+[0m← [0mEdit font_style_rs/src/lib.rs
+Index: /home/runner/work/KOMIK-TL/KOMIK-TL/font_style_rs/src/lib.rs
+===================================================================
+--- /home/runner/work/KOMIK-TL/KOMIK-TL/font_style_rs/src/lib.rs
++++ /home/runner/work/KOMIK-TL/KOMIK-TL/font_style_rs/src/lib.rs
+@@ -261,9 +261,9 @@
+ if h == 0 || w == 0 {
+     return Err(PyValueError::new_err("image must be non-empty"));
+ }
+ 
+-let out = PyDict::new(py);
++let out = PyDict::new_bound(py);
+ 
+ let (ink, xs, ys) = match binarize(&gray, h, w) {
+     Some(v) => v,
+     None => {
+
+[0m
+[0m$ [0mcargo check --release 2>&1 | tail -15
+Checking font_style_rs v0.1.0 (/home/runner/work/KOMIK-TL/KOMIK-TL/font_style_rs)
+    Finished `release` profile [optimized] target(s) in 0.11s
+[0m
+Compiles cleanly. Now building the extension and smoke-testing from Python:
+[0m$ [0mpip install maturin -q 2>&1 | tail -2; maturin --version
+maturin 1.14.1
+[0m
+[0m$ [0mmaturin develop --release 2>&1 | tail -8
+💥 maturin failed
+  Caused by: Couldn't find a virtualenv or conda environment, but you need one to use this command. For maturin to find your virtualenv you need to either set VIRTUAL_ENV (through activate), set CONDA_PREFIX (through conda activate) or have a virtualenv called .venv in the current or any parent folder. See https://virtualenv.pypa.io/en/latest/index.html on how to use virtualenv or use `maturin build` and `pip install <path/to/wheel>` instead.
+[0m
+[0m$ [0mpython3 -m venv .venv && .venv/bin/pip install -q maturin numpy opencv-python 2>&1 | tail -2 && .venv/bin/maturin develop --release 2>&1 | tail -6
+[notice] A new release of pip is available: 25.0.1 -> 26.2
+[notice] To update, run: python3 -m pip install --upgrade pip
+   Compiling numpy v0.21.0
+   Compiling font_style_rs v0.1.0 (/home/runner/work/KOMIK-TL/KOMIK-TL/font_style_rs)
+    Finished `release` profile [optimized] target(s) in 11.43s
+📦 Built wheel for CPython 3.12 to /tmp/.tmp9f1PcH/font_style_rs-0.1.0-cp312-cp312-linux_x86_64.whl
+✏️ Setting installed package as editable
+🛠 Installed font-style-rs-0.1.0
+[0m
+[0m← [0mWrite /tmp/opencode/smoke_test.py
+Wrote file successfully.
+[0m
+[0m$ [0m.venv/bin/python /tmp/opencode/smoke_test.py
+Traceback (most recent call last):
+  File "/tmp/opencode/smoke_test.py", line 3, in <module>
+    from PIL import Image, ImageDraw, ImageFont
+ModuleNotFoundError: No module named 'PIL'
+[0m
+[0m$ [0m.venv/bin/pip install -q pillow 2>&1 | tail -1; .venv/bin/python /tmp/opencode/smoke_test.py
+[notice] To update, run: python3 -m pip install --upgrade pip
+normal       shape=(120, 884)  ->  {'is_italic': False, 'is_bold': False}
+italic       shape=(120, 884)  ->  {'is_italic': False, 'is_bold': False}
+bold         shape=(120, 884)  ->  {'is_italic': False, 'is_bold': True}
+bold-italic  shape=(120, 884)  ->  {'is_italic': False, 'is_bold': False}
+Traceback (most recent call last):
+  File "/tmp/opencode/smoke_test.py", line 44, in <module>
+    show_auto("float32", italic.astype(np.float32))
+  File "/tmp/opencode/smoke_test.py", line 28, in show_auto
+    out = font_style_rs.analyze(arr)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: image must be a 2D grayscale NumPy array (uint8 or float64), e.g. cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
+[0m
+[0m← [0mEdit font_style_rs/src/lib.rs
+Index: /home/runner/work/KOMIK-TL/KOMIK-TL/font_style_rs/src/lib.rs
+===================================================================
+--- /home/runner/work/KOMIK-TL/KOMIK-TL/font_style_rs/src/lib.rs
++++ /home/runner/work/KOMIK-TL/KOMIK-TL/font_style_rs/src/lib.rs
+@@ -227,8 +227,14 @@
+     let v = a.as_array();
+     let (h, w) = (v.shape()[0], v.shape()[1]);
+     return Ok((h, w, v.iter().copied().collect()));
+ }
++if let Ok(a) = image.extract::<PyReadonlyArray2<f32>>() {
++    let v = a.as_array();
++    let (h, w) = (v.shape()[0], v.shape()[1]);
++    let bytes: Vec<u8> = v.iter().map(|&f| f.clamp(0.0, 255.0) as u8).collect();
++    return Ok((h, w, bytes));
++}
+ if let Ok(a) = image.extract::<PyReadonlyArray2<f64>>() {
+     let v = a.as_array();
+     let (h, w) = (v.shape()[0], v.shape()[1]);
+     let bytes: Vec<u8> = v.iter().map(|&f| f.clamp(0.0, 255.0) as u8).collect();
+
+[0m
+The test's shear was wrong (vertical instead of horizontal shear). Let me fix the test, and add float32 support:
+[0m← [0mEdit font_style_rs/src/lib.rs
+Index: /home/runner/work/KOMIK-TL/KOMIK-TL/font_style_rs/src/lib.rs
+===================================================================
+--- /home/runner/work/KOMIK-TL/KOMIK-TL/font_style_rs/src/lib.rs
++++ /home/runner/work/KOMIK-TL/KOMIK-TL/font_style_rs/src/lib.rs
+@@ -240,9 +240,9 @@
+         let bytes: Vec<u8> = v.iter().map(|&f| f.clamp(0.0, 255.0) as u8).collect();
+         return Ok((h, w, bytes));
+     }
+     Err(PyTypeError::new_err(
+-        "image must be a 2D grayscale NumPy array (uint8 or float64), e.g. cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)",
++        "image must be a 2D grayscale NumPy array (uint8/float32/float64), e.g. cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)",
+     ))
+ }
+ 
+ /// Analyze a grayscale text crop and return `{"is_italic": bool, "is_bold": bool}`.
+
+[0m
+[0m← [0mEdit /tmp/opencode/smoke_test.py
+Index: /tmp/opencode/smoke_test.py
+===================================================================
+--- /tmp/opencode/smoke_test.py
++++ /tmp/opencode/smoke_test.py
+@@ -13,12 +13,11 @@
+     d.text((10, 10), text, font=f, fill=0)
+     a = np.asarray(img, dtype=np.uint8)
+     if italic:
+         rows, cols = a.shape
+-        m = np.zeros((rows, cols, 1), np.float32)
+-        m[:, :, 0] = np.arange(cols) + 0.0
+-        shear = np.float32([[1, 0, 0], [np.tan(np.radians(14)), 1, 0], [0, 0, 1]])
+-        a = cv2.warpAffine(a, shear[:2], (cols, rows), borderValue=255)
++        t = np.tan(np.radians(14))
++        M = np.float32([[1, t, 0], [0, 1, 0]])
++        a = cv2.warpAffine(a, M, (cols, rows), borderValue=255)
+     return a
+ 
+ def show(name, arr, **kw):
+     out = font_style_rs.analyze(arr, **kw)
+
+[0m
+[0m$ [0m.venv/bin/pip install -q -e . 2>&1 | tail -1; .venv/bin/python /tmp/opencode/smoke_test.py
+[notice] To update, run: python3 -m pip install --upgrade pip
+normal       shape=(120, 884)  ->  {'is_italic': False, 'is_bold': False}
+italic       shape=(120, 884)  ->  {'is_italic': True, 'is_bold': False}
+bold         shape=(120, 884)  ->  {'is_italic': False, 'is_bold': True}
+bold-italic  shape=(120, 884)  ->  {'is_italic': True, 'is_bold': True}
+float32      shape=(120, 884)  ->  {'is_italic': True, 'is_bold': False}
+uniform      shape=(60, 200)  ->  {'is_italic': False, 'is_bold': False}
+tiny         shape=(8, 8)  ->  {'is_italic': False, 'is_bold': False}
+italic(loose) shape=(120, 884)  ->  {'is_italic': True, 'is_bold': False}
+[0m
+All cases pass. Quick performance benchmark, then cleanup:
+[0m$ [0m.venv/bin/python -c "
+import cv2, numpy as np, time, font_style_rs
+img = cv2.imread('font_style_rs/../KOMIK-TL.zip', cv2.IMREAD_UNCHANGED) if False else None
+rng = np.random.default_rng(0)
+big = (rng.random((512,512)) > 0.8).astype(np.uint8) * 255
+n=200
+t=time.perf_counter()
+for _ in range(n): font_style_rs.analyze(big)
+dt=(time.perf_counter()-t)/n*1e6
+print(f'{512*512}px crop: {dt:.1f} us/call  (~{1e6/dt:,.0f} calls/s)')
+"
+262144px crop: 11684.6 us/call  (~86 calls/s)
+[0m
+[0m$ [0m.venv/bin/python -c "
+import numpy as np, time, font_style_rs
+rng = np.random.default_rng(0)
+for (h,w) in [(60,300),(120,800),(40,120)]:
+    img = (rng.random((h,w)) > 0.82).astype(np.uint8) * 255
+    n=2000
+    t=time.perf_counter()
+    for _ in range(n): font_style_rs.analyze(img)
+    dt=(time.perf_counter()-t)/n*1e6
+    print(f'{w}x{h}: {dt:.1f} us/call  (~{1e6/dt:,.0f} calls/s)')
+"
+300x60: 728.7 us/call  (~1,372 calls/s)
+800x120: 3866.7 us/call  (~259 calls/s)
+120x40: 162.4 us/call  (~6,157 calls/s)
+[0m
+[0m← [0mWrite font_style_rs/.gitignore
+Wrote file successfully.
+[0m
+Fast enough — sub-millisecond for typical text crops. Cleaning up build artifacts and adding a `.gitignore`:
+[0m← [0mWrite font_style_rs/usage_example.py
+Wrote file successfully.
+[0m
+[0m← [0mWrite font_style_rs/usage_example.py
+Wrote file successfully.
+[0m
+[0m$ [0mrm -rf .venv target __pycache__ && ls -la
+total 40
+drwxr-xr-x 3 runner runner 4096 Aug  3 03:22 .
+drwxr-xr-x 6 runner runner 4096 Aug  3 03:19 ..
+-rw-r--r-- 1 runner runner   39 Aug  3 03:22 .gitignore
+-rw-r--r-- 1 runner runner 8384 Aug  3 03:20 Cargo.lock
+-rw-r--r-- 1 runner runner  387 Aug  3 03:19 Cargo.toml
+-rw-r--r-- 1 runner runner  291 Aug  3 03:19 pyproject.toml
+drwxr-xr-x 2 runner runner 4096 Aug  3 03:20 src
+-rw-r--r-- 1 runner runner  646 Aug  3 03:22 usage_example.py
+[0m
+[0m# [0mTodos
+[✓] Create Cargo.toml (PyO3 + numpy) and pyproject.toml for maturin
+[✓] Implement lib.rs: italic (projection-profile slant) + bold (stroke width + ink density)
+[✓] Compile/verify with cargo, and smoke-test the extension from Python
+[✓] Provide Python usage snippet
+[0m
+Selesai. Modul Rust `font_style_rs/` dibuat dan sudah di-*compile* + diuji. Kode Python kamu tidak disentuh sama sekali.
+
+**Struktur:**
+```
+font_style_rs/
+├── Cargo.toml        # PyO3 0.21 + rust-numpy 0.21, release profile LTO
+├── pyproject.toml    # backend maturin
+├── src/lib.rs        # analyzer murni Rust
+└── usage_example.py  # snippet pemanggilan
+```
+
+**Algoritma (`src/lib.rs`):**
+- **Italic** — estimasi sudut kemiringan via *projection-profile peakiness*: crop di-shear pada 49 kandidat sudut (−24°..24°); sudut dengan proyeksi vertikal paling tajam (Σ count²) dipakai. Jika `|slant| >= italic_threshold_deg` (default `10.0`) → italic.
+- **Bold** — dua sinyal geometris tanpa AI: (1) median *stroke width* dari approximate Euclidean distance transform (chamfer 1/√2) dinormalisasi oleh tinggi baris teks, (2) rasio tinta dalam bounding box. Jika `stroke_ratio >= 0.15` **atau** `density >= 0.40` → bold. Kedua threshold bisa di-*passing* sebagai argumen opsional.
+- Binerisasi Otsu adaptif (otomatis menangani teks hitam-di-putih maupun putih-di-hitam), aman untuk crop uniform/kosong.
+
+**Hasil uji** (render font asli + shear): normal → `{False, False}`, italic → `{True, False}`, bold → `{False, True}`, bold-italic → `{True, True}`. Kecepatan: ~0.7 ms untuk crop 300×60, ~0.16 ms untuk 120×40.
+
+**Build + snippet Python (3 baris inti):**
+```bash
+cd font_style_rs && maturin develop --release
+```
+```python
+import cv2, font_style_rs
+gray = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2GRAY)      # (H, W) uint8
+style = font_style_rs.analyze(gray)                    # {"is_italic": bool, "is_bold": bool}
+use_bold, use_italic = style["is_bold"], style["is_italic"]
+```
+
+Fungsi juga menerima array `float32/float64`; parameter threshold bisa disetel mis. `analyze(gray, italic_threshold_deg=8.0, bold_ink_density=0.35)` jika mau lebih sensitif terhadap gaya font komik tertentu.
