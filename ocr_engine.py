@@ -105,10 +105,38 @@ class OCREngine:
             base = lines[i]
             visited.add(i)
             group_boxes, combined_text, group_angles = [base['box']], [base['text']], [base['angle']]
-            group_italics, group_bolds = [base['is_italic']], [base['is_bold']] # <-- TAMBAH INI
+            group_italics, group_bolds = [base['is_italic']], [base['is_bold']] 
             
             for j in range(i + 1, len(lines)):
-                # ... (Biarkan kode logika bounding box dll tetap sama) ...
+                if j in visited: continue
+                next_box = lines[j]['box']
+                prev_box = group_boxes[-1] 
+                
+                prev_h = prev_box[3] - prev_box[1]
+                next_h = next_box[3] - next_box[1]
+                min_h = min(prev_h, next_h)
+                max_h = max(prev_h, next_h)
+                
+                # 1. KEMBALIKAN ATURAN HORIZONTAL ASLI YANG KETAT
+                # Memaksa teks harus bertumpuk/overlap secara horizontal (tidak bersebelahan)
+                is_horizontally_overlapping = (min(prev_box[2], next_box[2]) - max(prev_box[0], next_box[0])) > -5
+                prev_cx = (prev_box[0] + prev_box[2]) / 2
+                next_cx = (next_box[0] + next_box[2]) / 2
+                max_w = max(prev_box[2] - prev_box[0], next_box[2] - next_box[0])
+                is_center_aligned = abs(prev_cx - next_cx) < (max_w * 0.6)
+                
+                is_horizontally_aligned = is_horizontally_overlapping and is_center_aligned
+                
+                # 2. ATURAN VERTIKAL
+                # Toleransi ke bawah (gap) dibuat ketat, toleransi ke atas (overlap) dilonggarkan untuk teks miring
+                is_vertically_close = (-min_h * 2.0) <= (next_box[1] - prev_box[3]) <= max(10, min_h * 0.8)
+                
+                # 3. ATURAN TINGGI BOX (HEIGHT RATIO)
+                # Dilonggarkan ke 3.0 karena box teks miring tingginya sangat fluktuatif dibanding teks lurus
+                is_height_similar = (max_h / max(1, min_h)) < 3.0
+                
+                # 4. KEMIRINGAN
+                is_angle_similar = abs(lines[j]['angle'] - group_angles[-1]) < 12
                 
                 if is_horizontally_aligned and is_vertically_close and is_height_similar and is_angle_similar:
                     combined_text.append(lines[j]['text'])
