@@ -130,79 +130,89 @@ def fetch_chapter_soup(chapter_url, fetch_func, default_headers):
         return None
 
 def get_page_list(soup, chapter_url="", fetch_func=None, default_headers=None):
-    """Mengambil, mendekripsi, dan melakukan deobfuscate pada daftar gambar chapter"""
     if not soup:
+        print("[Debug] Soup kosong! Gagal fetch HTML chapter.")
         return []
 
     try:
+        print(f"\n[Debug] Memulai proses ekstraksi gambar dari: {chapter_url}")
+        
         # 1. Cari base64 string imgsrcs
-        script_imgsrcs = soup.find(lambda tag: tag.name == "script" and "imgsrcs" in tag.text)
+        script_imgsrcs = soup.find(lambda tag: tag.name == "script" and tag.string and "imgsrcs" in tag.string)
         if not script_imgsrcs:
-            raise Exception("Tidak menemukan script 'imgsrcs'")
+            print("[Debug] HTML tersimpan di soup:")
+            # Coba print sebagian kecil HTML buat ngecek apa kena blokir Cloudflare
+            print(str(soup)[:500])
+            raise Exception("STEP 1 GAGAL: Tidak menemukan script 'imgsrcs' di HTML.")
             
-        imgsrcs_match = re.search(r'var imgsrcs\s*=\s*[\'"]([a-zA-Z0-9+=/]+)[\'"]', script_imgsrcs.text)
+        imgsrcs_match = re.search(r'var imgsrcs\s*=\s*[\'"]([a-zA-Z0-9+=/]+)[\'"]', script_imgsrcs.string)
         if not imgsrcs_match:
-            raise Exception("Gagal mengekstrak value imgsrcs")
+            raise Exception("STEP 1 GAGAL: Regex gagal mengekstrak value imgsrcs.")
             
+        print("[Debug] STEP 1 OK: Berhasil dapat base64 imgsrcs.")
         encrypted_images = base64.b64decode(imgsrcs_match.group(1))
 
         # 2. Ambil script chapter.js dan deobfuscate
         script_chapter_js = soup.select_one('script[src*="chapter.js"]')
         if not script_chapter_js or not fetch_func:
-             raise Exception("Tidak menemukan tag script chapter.js atau fetch_func tidak dipassing")
+             raise Exception("STEP 2 GAGAL: Tidak menemukan tag script chapter.js atau fetch_func kosong.")
              
         js_url = urljoin(chapter_url, script_chapter_js.get('src'))
+        print(f"[Debug] Fetching chapter.js dari: {js_url}")
         js_res = fetch_func(js_url, default_headers, timeout=15)
         
         chapter_js_decoded = decode_sojson_v4(js_res.text)
+        print("[Debug] STEP 2 OK: Berhasil decode sojson.v4.")
 
-        # 3. Temukan Key & IV untuk AES (Hex Parsing)
+        # 3. Temukan Key & IV untuk AES
         def get_hex_var(var_name):
             match = re.search(fr'var {var_name}\s*=\s*CryptoJS\.enc\.Hex\.parse\("([0-9a-zA-Z]+)"\)', chapter_js_decoded)
             return bytes.fromhex(match.group(1)) if match else b""
 
         key = get_hex_var("key")
         iv = get_hex_var("iv")
+        
+        if not key or not iv:
+            raise Exception("STEP 3 GAGAL: Kunci AES (key/iv) tidak ditemukan di dalam chapter.js")
+            
+        print(f"[Debug] STEP 3 OK: Dapat Key & IV AES.")
 
         # 4. Dekripsi AES
         cipher = AES.new(key, AES.MODE_CBC, iv)
         decrypted_bytes = cipher.decrypt(encrypted_images)
-        
-        # Hapus padding (ZeroBytePadding)
         decrypted_string = decrypted_bytes.rstrip(b'\x00').decode('utf-8')
+        print("[Debug] STEP 4 OK: Dekripsi AES berhasil.")
 
         # 5. Unscramble string daftar gambar
         image_list_str = unscramble_image_list(decrypted_string, chapter_js_decoded)
         raw_urls = image_list_str.split(',')
+        print(f"[Debug] STEP 5 OK: Ditemukan {len(raw_urls)} URL gambar.")
 
-        # 6. Jalankan JavaScript ringan untuk descrambling key (opsional, untuk cspiclink)
-        # Meniru getDescramblingKey via PyExecJS
+        # 6. PyExecJS untuk getDescramblingKey
         try:
             cols_match = re.search(r'var\s*widthnum\s*=\s*heightnum\s*=\s*(\d+);', chapter_js_decoded)
             cols = cols_match.group(1) if cols_match else ""
 
-            # Ambil potongan JS untuk generate desckey
             js_logic = chapter_js_decoded.split("var renImg = function(img,width,height,id){")[1].split("key = key.split(")[0]
-            
-            # Buat JS Context
             js_context = execjs.compile(f"""
                 function getDescramblingKey(url) {{
                     {js_logic.replace('img.src', 'url')}
                     return key;
                 }}
             """)
-        except Exception:
+            print("[Debug] STEP 6 OK: PyExecJS Context berhasil dibuat.")
+        except Exception as e:
             js_context = None
+            print(f"[Debug] STEP 6 WARNING: PyExecJS gagal ({e}). Pastikan Node.js terinstal!")
 
         pages = []
         for idx, img in enumerate(raw_urls):
             if "cspiclink" in img and js_context:
-                # Resolve descrambling key untuk mangago
                 try:
                     desc_key = js_context.call("getDescramblingKey", img)
                     img = f"{img}#desckey={desc_key}&cols={cols}"
-                except:
-                    pass
+                except Exception as ex:
+                    print(f"[Debug] Gagal generate desckey untuk gambar {idx}: {ex}")
             
             if img.strip():
                 pages.append({
@@ -213,5 +223,5 @@ def get_page_list(soup, chapter_url="", fetch_func=None, default_headers=None):
         return pages
 
     except Exception as e:
-        print(f"[Mangago Error] Gagal memproses gambar: {e}")
+        print(f"\n[Mangago Error] Proses terhenti: {e}")
         return []
