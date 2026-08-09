@@ -8,44 +8,8 @@ import json # [BARU] Import modul json
 from PIL import Image
 
 import config
+from scraper import get_chapter_list, fetch_chapter_soup, get_page_list, get_chapter_name
 from translator import AiTranslator 
-import subprocess
-
-def run_js_scraper(action, url):
-    """Menjalankan scraper.mjs lewat terminal dan membaca hasil JSON-nya."""
-    try:
-        result = subprocess.run(
-            ['node', 'scraper.mjs', action, url],
-            capture_output=True, text=True, check=True, encoding='utf-8'
-        )
-        # Ambil baris terakhir saja (menghindari warning / console log liar dari Node)
-        lines = result.stdout.strip().split('\n')
-        if not lines or lines[-1] == "null":
-            return None
-        return json.loads(lines[-1])
-    except Exception as e:
-        print(f"[Error] Node.js scraper gagal mengeksekusi aksi '{action}': {e}")
-        return None
-
-# =================================================================
-# Pengganti Fungsi Scraper Python (Mengirim instruksi ke scraper.mjs)
-# =================================================================
-def get_chapter_list(url):
-    res = run_js_scraper('chapter_list', url)
-    return res if res else []
-
-def fetch_chapter_soup(url):
-    # Python tidak mem-parsing HTML lagi, jadi cukup kembalikan URL-nya ke fungsi lain
-    return url
-
-def get_page_list(url):
-    res = run_js_scraper('page_list', url)
-    return res if res else []
-
-def get_chapter_name(url):
-    res = run_js_scraper('chapter_info', url)
-    return res if res else {"title": "Unknown Title", "chapter_name": "Unknown Chapter"}
-    
 
 # Import modul yang sudah dipisah
 from ocr_engine import OCREngine
