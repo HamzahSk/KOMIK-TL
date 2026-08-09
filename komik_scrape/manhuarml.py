@@ -4,7 +4,7 @@ import requests
 DOMAINS = ["manhuarmtl.com"]
 
 # Sesuaikan port dengan server Express.js kamu
-API_BASE_URL = "http://78.154.103.13:15453/" 
+API_BASE_URL = "http://78.154.103.13:15453" 
 
 def get_chapter_list(manga_url, fetch_func, headers):
     """
