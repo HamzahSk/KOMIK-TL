@@ -11,7 +11,7 @@ def get_chapter_list(manga_url, fetch_func, default_headers):
         slug = manga_url.strip("/").split("/")[-1]
         api_url = f"{BASE_URL}/get-chapter-list?slug={slug}"
         
-        # --- CUSTOM HEADER DI SINI ---
+        # --- CUSTOM HEADER ---
         # Copy header bawaan biar User-Agent tetap ikut
         custom_headers = default_headers.copy() 
         custom_headers.update({
@@ -42,7 +42,8 @@ def get_chapter_list(manga_url, fetch_func, default_headers):
 
 def fetch_chapter_soup(chapter_url, fetch_func, default_headers):
     try:
-        # --- CUSTOM HEADER LAGI UNTUK SOUP ---
+        # --- CUSTOM HEADER UNTUK SOUP ---
+        # Root referer sangat penting di sini untuk bypass CDN 403 blocks (seperti di Bbato.kt)
         custom_headers = default_headers.copy()
         custom_headers['Referer'] = f"{BASE_URL}/"
         
@@ -52,4 +53,57 @@ def fetch_chapter_soup(chapter_url, fetch_func, default_headers):
         print(f"[Bbato Error] Gagal mengambil URL chapter: {e}")
         return None
 
-# ... (fungsi get_page_list dan get_chapter_name menyesuaikan format template sebelumnya)
+def get_page_list(soup, chapter_url, fetch_func, default_headers):
+    """
+    Diambil dari fungsi pageListParse di file Bbato.kt:
+    document.select(".pages .page:not(.notice-page) img")
+    img.attr("abs:data-src").ifEmpty { attr("abs:src") }
+    """
+    pages = []
+    if not soup:
+        return pages
+        
+    # Selector mengikuti rule dari Kotlin (Tachiyomi)
+    images = soup.select(".pages .page:not(.notice-page) img")
+    
+    for img in images:
+        # Ambil dari data-src dulu untuk lazy load, kalau kosong ambil dari src
+        img_url = img.get("data-src") or img.get("src")
+        
+        if img_url:
+            # Pastikan URL gambar adalah absolute URL
+            img_url = urljoin(BASE_URL, img_url.strip())
+            pages.append(img_url)
+            
+    return pages
+
+def get_chapter_name(soup, chapter_url=""):
+    """
+    Fungsi pelengkap untuk mencocokkan format dengan scraper.py.
+    Diambil berdasarkan format judul yang umumnya dipakai di Tachiyomi extension.
+    """
+    title = "Unknown Title"
+    chapter_name = "Unknown Chapter"
+    
+    if soup:
+        # Coba ambil judul komik (mangaDetailsParse Kotlin pake h1[itemprop=name])
+        h1_title = soup.select_one("h1[itemprop=name]")
+        if h1_title:
+            title = h1_title.get_text(strip=True)
+            
+        # Untuk nama chapter saat sedang membaca, kita fallback menggunakan tag title web
+        title_tag = soup.find("title")
+        if title_tag:
+            full_title = title_tag.get_text(strip=True)
+            
+            # Jika belum dapet title dari h1, coba ekstrak dari tag <title>
+            if title == "Unknown Title" and "-" in full_title:
+                parts = full_title.split("-", 1)
+                title = parts[0].strip()
+                chapter_name = parts[1].strip()
+            elif "-" in full_title:
+                chapter_name = full_title.split("-")[-1].strip()
+            else:
+                chapter_name = full_title
+                
+    return {"title": title, "chapter_name": chapter_name}
