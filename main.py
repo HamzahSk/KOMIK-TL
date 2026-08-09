@@ -62,7 +62,7 @@ def main():
             continue
             
         # Mengambil data dict { "title": "...", "chapter_name": "..." }
-        ch_info = get_chapter_name(soup)
+        ch_info = get_chapter_name(soup, ch_url)
         
         # Sanitasi nama agar aman untuk folder dan file sistem
         manga_title = re.sub(r'[^a-zA-Z0-9_\-\s]', '_', ch_info.get('title', 'Unknown_Manga')).strip()[:100]
@@ -76,7 +76,7 @@ def main():
         print(f"\n{'='*40}\nManga: {manga_title}")
         print(f"Memproses Chapter: {chapter_name}\n{'='*40}")
         
-        pages = get_page_list(soup)
+        pages = get_page_list(soup, ch_url)
         if not pages:
             print("[Warning] Tidak ada halaman gambar yang ditemukan.")
             continue
