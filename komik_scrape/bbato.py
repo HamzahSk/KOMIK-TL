@@ -54,24 +54,28 @@ def fetch_chapter_soup(chapter_url, fetch_func, default_headers):
         return None
 
 def get_page_list(soup, chapter_url, fetch_func, default_headers):
-    """
-    Diambil dari fungsi pageListParse di file Bbato.kt:
-    document.select(".pages .page:not(.notice-page) img")
-    img.attr("abs:data-src").ifEmpty { attr("abs:src") }
-    """
     pages = []
     if not soup:
         return pages
         
-    # Selector mengikuti rule dari Kotlin (Tachiyomi)
-    images = soup.select(".pages .page:not(.notice-page) img")
+    # Gunakan selector spesifik: ambil img yang punya atribut data-number di dalam .pages
+    images = soup.select(".pages .page:not(.notice-page) img[data-number]")
     
     for img in images:
-        # Ambil dari data-src dulu untuk lazy load, kalau kosong ambil dari src
-        img_url = img.get("data-src") or img.get("src")
+        # Filter ekstra: pastikan kita skip kalau data-number nya "notice"
+        if img.get("data-number") == "notice":
+            continue
+            
+        # Urutan prioritas pengambilan URL gambar:
+        # 1. data-src (biasanya untuk lazyload)
+        # 2. data-fallback (sering dipakai di BBato sebagai cadangan)
+        # 3. src (untuk gambar yang diload langsung / eager)
+        img_url = img.get("data-src") or img.get("data-fallback") or img.get("src")
         
-        if img_url:
-            # Pastikan URL gambar adalah absolute URL
+        # Validasi tambahan:
+        # Pastikan img_url ada isinya dan BUKAN placeholder (seperti data:image/svg...)
+        if img_url and not img_url.startswith("data:image"):
+            # Gabungkan dengan BASE_URL kalau path-nya relatif
             img_url = urljoin(BASE_URL, img_url.strip())
             pages.append(img_url)
             
