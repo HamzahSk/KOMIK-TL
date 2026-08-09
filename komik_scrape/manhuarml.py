@@ -14,14 +14,22 @@ def get_chapter_list(manga_url, fetch_func, headers):
     try:
         api_url = f"{API_BASE_URL}/api/chapters"
         
-        # Karena kita memanggil API lokal buatan sendiri, kita pakai requests biasa 
-        # (tidak perlu fetch_func/fallback ke proxy untuk API lokal)
         response = requests.get(api_url, params={"url": manga_url})
         response.raise_for_status() 
         
         data = response.json()
         if data.get("success"):
-            return data.get("data", [])
+            chapters = data.get("data", [])
+            formatted_chapters = []
+            
+            # [PERBAIKAN] Ubah key 'link' dari API menjadi 'url' agar tidak error di main.py (Baris 45)
+            for ch in chapters:
+                formatted_chapters.append({
+                    "title": ch.get("title", "Unknown Title"),
+                    "url": ch.get("link", ""), 
+                    "date": ch.get("date", "")
+                })
+            return formatted_chapters
         else:
             print(f"[Error - API] {data.get('error')}")
             return []
@@ -43,7 +51,6 @@ def fetch_chapter_soup(chapter_url, fetch_func, headers):
         
         data = response.json()
         if data.get("success"):
-            # Return dictionary data (berisi images, mangaTitle, dll)
             return data.get("data", {})
         else:
             print(f"[Error - API] {data.get('error')}")
@@ -56,11 +63,20 @@ def fetch_chapter_soup(chapter_url, fetch_func, headers):
 def get_page_list(soup, chapter_url, fetch_func, headers):
     """
     Mengambil list gambar.
-    Sesuai template: 'soup' di sini sekarang BUKAN BeautifulSoup, 
-    melainkan dictionary JSON yang dikirim dari fetch_chapter_soup di atas.
+    Sesuai template: 'soup' di sini sekarang adalah dictionary JSON.
     """
     if isinstance(soup, dict):
-        return soup.get("images", [])
+        images = soup.get("images", [])
+        formatted_pages = []
+        
+        # [PERBAIKAN] Ubah list string URL gambar menjadi list of dictionary
+        # agar tidak error di main.py (Baris 85)
+        for i, img_url in enumerate(images):
+            formatted_pages.append({
+                "index": i,
+                "url": img_url
+            })
+        return formatted_pages
     
     return []
 
@@ -71,8 +87,9 @@ def get_chapter_name(soup, chapter_url):
     """
     if isinstance(soup, dict):
         return {
-            "title": soup.get("mangaTitle", "Unknown Title"),
-            "chapter_name": soup.get("chapterNumber", "Unknown Chapter")
+            # Fallback berjenjang kalau mangaTitle kosong
+            "title": soup.get("mangaTitle") or soup.get("rawHeading") or "Unknown Title",
+            "chapter_name": soup.get("chapterNumber") or "Unknown Chapter"
         }
         
     return {
