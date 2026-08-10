@@ -1,7 +1,6 @@
 # translator.py
 import time
 import re
-import random
 import requests
 import urllib.parse
 import config
@@ -13,10 +12,16 @@ class AiTranslator:
         self.main_api_key = 'sk-zJct6jIkvGNYSMyK9ETsitpaBa3DE23ftQI5n4VgQmYEKxWh'
         self.main_model = 'gpt-5-mini'
         
-        # Konfigurasi API Fallback 1 (Deepseek Custom Endpoint / Vercel)
+        # Konfigurasi API Fallback Baru (Proxy-GLS - gpt-oss-120b)
+        self.new_fallback_url = 'https://api-public.proxy-gls.de5.net/v1/chat/completions'
+        # Ambil dari config jika ada, jika tidak gunakan string kosong/default
+        self.new_fallback_key = getattr(config, "NEW_API_KEY", "sk-zKxezMeHaET0KtMA1K9PSnl3mK5heHCyRqkModd9fuzPMLIw")
+        self.new_fallback_model = 'gpt-oss-120b'
+        
+        # Konfigurasi API Fallback 1 Lama (Deepseek Custom Endpoint / Vercel)
         self.fallback_url_1 = 'https://ai-seerver.vercel.app/chat/deepseek'
         
-        # Konfigurasi API Fallback 2 (TheTurboChat / Gemini)
+        # Konfigurasi API Fallback 2 Lama (TheTurboChat / Gemini)
         self.fallback_url_2 = 'https://theturbochat.com/api/chat/message'
         
         self.MAX_CHARS = 1500
@@ -103,9 +108,48 @@ class AiTranslator:
         content = choices[0].get('message', {}).get('content', '')
         return content
 
+    def _new_fallback_translate(self, prompt_text):
+        """Metode Fallback Baru menggunakan Proxy-GLS."""
+        print("[System] Memulai sesi Fallback Baru via Proxy-GLS...")
+        headers = {
+            "Authorization": f"Bearer {self.new_fallback_key}",
+            "Content-Type": "application/json"
+        }
+        
+        payload = {
+            "model": self.new_fallback_model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": prompt_text
+                }
+            ],
+            "temperature": 0.7
+        }
+
+        try:
+            response = requests.post(
+                self.new_fallback_url, 
+                headers=headers, 
+                json=payload, 
+                timeout=45
+            )
+            response.raise_for_status()
+            data = response.json()
+            
+            choices = data.get('choices', [])
+            if not choices:
+                raise ValueError("Respons dari Proxy-GLS tidak memiliki 'choices'.")
+                
+            return choices[0].get('message', {}).get('content', '')
+            
+        except Exception as e:
+            print(f"[Error] Fallback Baru API Proxy-GLS gagal: {e}")
+            return None
+
     def _fallback_translate_1(self, prompt_text):
-        """Metode Fallback 1 menggunakan Deepseek Vercel (sebelumnya API Utama)."""
-        print("[System] Memulai sesi Fallback 1 via DeepSeek Vercel...")
+        """Metode Fallback Lama 1 menggunakan Deepseek Vercel."""
+        print("[System] Memulai sesi Fallback Lama 1 via DeepSeek Vercel...")
         
         encoded_query = urllib.parse.quote(prompt_text)
         req_url = f"{self.fallback_url_1}?q={encoded_query}"
@@ -126,12 +170,12 @@ class AiTranslator:
             return result_data.get('message', '')
             
         except Exception as e:
-            print(f"[Error] Fallback 1 API DeepSeek Vercel gagal: {e}")
+            print(f"[Error] Fallback Lama 1 API DeepSeek Vercel gagal: {e}")
             return None
 
     def _fallback_translate_2(self, prompt_text):
-        """Metode Fallback 2 menggunakan Gemini via TheTurboChat."""
-        print("[System] Memulai sesi Fallback 2 via TheTurboChat (Gemini)...")
+        """Metode Fallback Lama 2 menggunakan Gemini via TheTurboChat."""
+        print("[System] Memulai sesi Fallback Lama 2 via TheTurboChat (Gemini)...")
         
         headers = {
             'accept': '*/*',
@@ -163,7 +207,7 @@ class AiTranslator:
             return data.get('outputText', '')
             
         except Exception as e:
-            print(f"[Error] Fallback 2 API TheTurboChat gagal: {e}")
+            print(f"[Error] Fallback Lama 2 API TheTurboChat gagal: {e}")
             return None
 
     def _verify_and_clean(self, ai_response, batch):
@@ -195,49 +239,52 @@ class AiTranslator:
             translations = []
             
             main_success = False
-            for attempt in range(2): # Mencoba maksimal 2 kali
-                try:
-                    # 1. Coba API Utama (Bluesminds)
-                    ai_response_text = self._main_translate(user_message)
-                    
-                    # Verifikasi hasil Utama
-                    translations = self._verify_and_clean(ai_response_text, batch)
-                    
-                    if translations:
-                        print("=== RESPON UTAMA SUKSES ===")
-                        main_success = True
-                        break # Jika sukses, keluar dari loop percobaan
-                    else:
-                        raise ValueError("Format teks dari API Utama berantakan.")
-                    
-                except Exception as e:
-                    print(f"[Warning] API Utama Bermasalah di percobaan {attempt + 1} ({e}).")
-                    if attempt == 0:
-                        print("Mencoba ulang API Utama sekali lagi dalam 2 detik...")
-                        time.sleep(2) # Jeda sebelum mencoba ulang
             
-            # Jika setelah 2 kali coba masih gagal, jalankan Fallback
-            if not main_success:
-                print("[Warning] API Utama gagal setelah 2 kali percobaan. Beralih ke Fallback 1...")
+            try:
+                # 1. Coba API Utama (Bluesminds) - TANPA RETRY
+                ai_response_text = self._main_translate(user_message)
                 
-                # 2. Fallback 1 (DeepSeek Vercel)
-                ai_response = self._fallback_translate_1(user_message)
+                # Verifikasi hasil Utama
+                translations = self._verify_and_clean(ai_response_text, batch)
+                
+                if translations:
+                    print("=== RESPON UTAMA SUKSES ===")
+                    main_success = True
+                else:
+                    raise ValueError("Format teks dari API Utama berantakan.")
+                
+            except Exception as e:
+                print(f"[Warning] API Utama Gagal ({e}). Langsung beralih ke Fallback Baru...")
+            
+            # Jika API Utama gagal, jalankan rentetan Fallback
+            if not main_success:
+                # 2. Fallback Baru (Proxy-GLS)
+                ai_response = self._new_fallback_translate(user_message)
                 translations = self._verify_and_clean(ai_response, batch)
                 
                 if translations:
-                    print("=== RESPON FALLBACK 1 SUKSES ===")
+                    print("=== RESPON FALLBACK BARU SUKSES ===")
                 else:
-                    print("[Warning] Fallback 1 Gagal atau Format Berantakan. Beralih ke Fallback 2...")
+                    print("[Warning] Fallback Baru Gagal/Format Berantakan. Beralih ke Fallback Lama 1...")
                     
-                    # 3. Fallback 2 (TheTurboChat - Gemini)
-                    ai_response = self._fallback_translate_2(user_message)
+                    # 3. Fallback Lama 1 (DeepSeek Vercel)
+                    ai_response = self._fallback_translate_1(user_message)
                     translations = self._verify_and_clean(ai_response, batch)
                     
                     if translations:
-                        print("=== RESPON FALLBACK 2 SUKSES ===")
+                        print("=== RESPON FALLBACK LAMA 1 SUKSES ===")
                     else:
-                        print("[Error] Semua API dan Fallback gagal. Menggunakan teks asli.")
-                        translations = batch
+                        print("[Warning] Fallback Lama 1 Gagal. Beralih ke Fallback Lama 2...")
+                        
+                        # 4. Fallback Lama 2 (TheTurboChat - Gemini)
+                        ai_response = self._fallback_translate_2(user_message)
+                        translations = self._verify_and_clean(ai_response, batch)
+                        
+                        if translations:
+                            print("=== RESPON FALLBACK LAMA 2 SUKSES ===")
+                        else:
+                            print("[Error] Semua API dan Fallback gagal. Menggunakan teks asli.")
+                            translations = batch
 
             all_translations.extend(translations)
             time.sleep(1.5)

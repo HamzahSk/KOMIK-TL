@@ -1,18 +1,6 @@
 # config.py
-URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
+URLMANGA = ["https://bbato.com/manga/hunger-for-you"] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-    "https://bbato.com/read/blood-poker/chapter-34",
-    "https://bbato.com/read/blood-poker/chapter-35",
-    "https://bbato.com/read/blood-poker/chapter-36",
-    "https://bbato.com/read/blood-poker/chapter-37",
-    "https://bbato.com/read/blood-poker/chapter-38",
-    "https://bbato.com/read/blood-poker/chapter-39",
-    "https://bbato.com/read/blood-poker/chapter-40",
-    "https://bbato.com/read/blood-poker/chapter-41",
-    "https://bbato.com/read/blood-poker/chapter-42",
-    "https://bbato.com/read/blood-poker/chapter-43",
-    "https://bbato.com/read/blood-poker/chapter-44",
-    "https://bbato.com/read/blood-poker/chapter-45",
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking
