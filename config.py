@@ -1,6 +1,9 @@
 # config.py
-URLMANGA = ["https://bbato.com/manga/hunger-for-you"] # https://bbato.com/manga/soulbound"] 
+URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
+    "https://bbato.com/read/jinx/chapter-102",
+    "https://bbato.com/read/jinx/chapter-102.1",
+    "https://bbato.com/read/jinx/chapter-103"
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking
