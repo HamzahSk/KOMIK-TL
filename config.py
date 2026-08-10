@@ -1,18 +1,20 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-    "https://bbato.com/read/december-rain/chapter-0",
-    "https://bbato.com/read/december-rain/chapter-1", 
-    "https://bbato.com/read/december-rain/chapter-2", 
-    "https://bbato.com/read/december-rain/chapter-3", 
-    "https://bbato.com/read/december-rain/chapter-4",
-    "https://bbato.com/read/december-rain/chapter-5", 
-    "https://bbato.com/read/december-rain/chapter-6", 
-    "https://bbato.com/read/december-rain/chapter-7", 
-    "https://bbato.com/read/december-rain/chapter-8",
-    "https://bbato.com/read/december-rain/chapter-9", 
-    "https://bbato.com/read/december-rain/chapter-10", 
-    "https://bbato.com/read/december-rain/chapter-11", 
+    "https://bbato.com/read/december-rain/chapter-12", 
+    "https://bbato.com/read/december-rain/chapter-13", 
+    "https://bbato.com/read/december-rain/chapter-14", 
+    "https://bbato.com/read/december-rain/chapter-15", 
+    "https://bbato.com/read/december-rain/chapter-16", 
+    "https://bbato.com/read/december-rain/chapter-17", 
+    "https://bbato.com/read/december-rain/chapter-18", 
+    "https://bbato.com/read/december-rain/chapter-19", 
+    "https://bbato.com/read/december-rain/chapter-20", 
+    "https://bbato.com/read/december-rain/chapter-21", 
+    "https://bbato.com/read/december-rain/chapter-22", 
+   "https://bbato.com/read/december-rain/chapter-23", 
+    "https://bbato.com/read/december-rain/chapter-24", 
+    "https://bbato.com/read/december-rain/chapter-25", 
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking
