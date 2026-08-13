@@ -23,13 +23,15 @@ def main():
     font_dir = getattr(config, 'FONT_PATH', 'font')
     fonts_dict = {
         'normal': os.path.join(font_dir, getattr(config, 'FONT_NORMAL', 'CC Wild Words Roman.ttf')),
-        'bold': os.path.join(font_dir, getattr(config, 'FONT_BOLD', 'CC Wild Words Bold Italic.ttf')),
+        'bold': os.path.join(font_dir, getattr(config, 'FONT_BOLD', 'Wild Words Bold Bold.ttf')),
         'italic': os.path.join(font_dir, getattr(config, 'FONT_ITALIC', 'CC Wild Words Italic.ttf')),
-        'sfx': os.path.join(font_dir, getattr(config, 'FONT_SFX', 'ComicNoteSmooth.ttf'))
+        'bold_italic': os.path.join(font_dir, getattr(config, 'FONT_BOLD_ITALIC', 'CC Wild Words Bold Italic.ttf')),
+        'sfx': os.path.join(font_dir, getattr(config, 'FONT_SFX', 'ComicNoteSmooth.ttf')),
+        'sistem': os.path.join(font_dir, getattr(config, 'FONT_SISTEM', 'Oxanium-Regular.ttf')),
+        'sistem_bold': os.path.join(font_dir, getattr(config, 'FONT_SISTEM_BOLD', 'Oxanium-Bold.ttf'))
     }
     # --- AKHIR ---
 
-    
     if not mangas and not chapters:
         print("[System] URL kosong di config.py. Tidak ada yang diproses.")
         return

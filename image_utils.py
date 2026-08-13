@@ -157,14 +157,17 @@ class Typesetter:
             # --- MULAI: Logika Pemilihan Font ---
             is_italic = block.get('is_italic', False)
             is_bold = block.get('is_bold', False)
-            
+            is_system = block.get('is_system', False) # Flag opsional untuk UI/System text
+
             if is_sfx:
                 active_font_path = fonts_dict['sfx']
+            elif is_system:
+                active_font_path = fonts_dict['sistem_bold'] if is_bold else fonts_dict['sistem']
+            elif is_bold and is_italic:
+                active_font_path = fonts_dict['bold_italic']
             elif is_bold:
-                # Prioritaskan bold (biasanya untuk penekanan berteriak di komik)
                 active_font_path = fonts_dict['bold']
             elif is_italic:
-                # Gunakan italic untuk monolog / dalam hati
                 active_font_path = fonts_dict['italic']
             else:
                 active_font_path = fonts_dict['normal']
@@ -173,7 +176,7 @@ class Typesetter:
             if not os.path.exists(active_font_path):
                 active_font_path = fonts_dict['normal']
             # --- AKHIR ---
- 
+
             total_height = 0
 
             line_height = 0

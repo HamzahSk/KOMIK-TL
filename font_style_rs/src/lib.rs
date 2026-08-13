@@ -1,17 +1,6 @@
-//! font_style_rs — pure-Rust computer-vision analyzer for italic / bold detection.
-//!
-//! No AI model, no ML inference: only fast pixel-level operations.
-//!
-//!   * italic  -> slant angle estimated by maximizing the peakiness (sum of
-//!               squared counts) of the *vertical projection profile* over a
-//!               range of shear angles. If the dominant slant exceeds the
-//!               threshold the text is treated as italic.
-//!   * bold    -> two hand-tuned geometric signals: (1) median stroke width
-//!               (approx. Euclidean distance transform, chamfer 1/√2) normalized
-//!               by the dominant line height, and (2) ink density inside the
-//!               tight ink bounding box.
+//! font_style_rs — pure-Rust computer-vision analyzer for italic / bold / font-type detection.
 
-use numpy::{PyReadonlyArray2};
+use numpy::PyReadonlyArray2;
 use pyo3::exceptions::{PyTypeError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::{PyDict, PyModule};
@@ -60,10 +49,6 @@ fn otsu_threshold(gray: &[u8]) -> Option<u8> {
     best_t
 }
 
-/// Builds an ink mask + pixel coordinate lists.
-///
-/// Text can be dark-on-light or light-on-dark; we always treat the *minority*
-/// intensity class (separated by Otsu) as the ink.
 fn binarize(gray: &[u8], h: usize, w: usize) -> Option<(Vec<bool>, Vec<i32>, Vec<i32>)> {
     let t = otsu_threshold(gray)?;
     let mut dark = 0usize;
@@ -93,8 +78,6 @@ fn binarize(gray: &[u8], h: usize, w: usize) -> Option<(Vec<bool>, Vec<i32>, Vec
     Some((ink, xs, ys))
 }
 
-/// Approximate Euclidean distance transform (two-pass chamfer 1 / √2) giving,
-/// for every pixel, the distance to the nearest non-ink pixel.
 fn distance_transform(ink: &[bool], h: usize, w: usize) -> Vec<f32> {
     let mut d = vec![f32::INFINITY; h * w];
     for (i, v) in d.iter_mut().enumerate() {
@@ -102,7 +85,6 @@ fn distance_transform(ink: &[bool], h: usize, w: usize) -> Vec<f32> {
             *v = 0.0;
         }
     }
-    // forward pass (top-left -> bottom-right)
     for i in 0..h {
         for j in 0..w {
             let idx = i * w + j;
@@ -125,7 +107,6 @@ fn distance_transform(ink: &[bool], h: usize, w: usize) -> Vec<f32> {
             d[idx] = best;
         }
     }
-    // backward pass (bottom-right -> top-left)
     for i in (0..h).rev() {
         for j in (0..w).rev() {
             let idx = i * w + j;
@@ -151,9 +132,6 @@ fn distance_transform(ink: &[bool], h: usize, w: usize) -> Vec<f32> {
     d
 }
 
-/// Robust stroke thickness = 2 * (60th percentile of the distance transform
-/// sampled on ink pixels).  The factor 2 turns "distance to background"
-/// (~half stroke width) into a full stroke-width estimate.
 fn median_stroke_width(d: &[f32], ink: &[bool]) -> Option<f64> {
     let mut vals: Vec<f32> = d
         .iter()
@@ -168,7 +146,6 @@ fn median_stroke_width(d: &[f32], ink: &[bool]) -> Option<f64> {
     Some(2.0 * vals[k.min(vals.len() - 1)] as f64)
 }
 
-/// Dominant text-line height: longest contiguous run of rows that contain ink.
 fn dominant_line_height(ink: &[bool], h: usize, w: usize) -> usize {
     let mut best = 0usize;
     let mut cur = 0usize;
@@ -184,13 +161,6 @@ fn dominant_line_height(ink: &[bool], h: usize, w: usize) -> usize {
     best
 }
 
-/// Slant estimation by projection-profile peakiness.
-///
-/// The image is sheared at many candidate angles; for each angle the vertical
-/// projection (per-column ink counts) is computed. The angle that concentrates
-/// the ink into the fewest, sharpest columns (maximizing sum of squared counts)
-/// is the dominant text slant. A text with ~0° slant -> not italic; a clear
-/// slant beyond the threshold -> italic.
 fn estimate_slant(xs: &[i32], ys: &[i32], h: i32, w: i32) -> f64 {
     let n = xs.len();
     if n < MIN_INK_PIXELS {
@@ -222,6 +192,77 @@ fn estimate_slant(xs: &[i32], ys: &[i32], h: i32, w: i32) -> f64 {
     best_angle
 }
 
+/// --- FUNGSI BARU: Analisis Bentuk Glyphs (Condensed / System Font Detection) ---
+/// Mengisolasi tiap huruf (connected components) dan menghitung rata-rata rasio lebar/tinggi huruf.
+fn analyze_glyph_shapes(ink: &[bool], h: usize, w: usize, line_h: f64) -> bool {
+    if h == 0 || w == 0 || line_h < 5.0 {
+        return false;
+    }
+
+    let mut visited = vec![false; h * w];
+    let mut aspect_ratios = Vec::new();
+
+    for y in 0..h {
+        for x in 0..w {
+            let idx = y * w + x;
+            if ink[idx] && !visited[idx] {
+                // BFS Flood-fill sederhana untuk mencari kotak bounding tiap karakter
+                let mut min_x = x;
+                let mut max_x = x;
+                let mut min_y = y;
+                let mut max_y = y;
+                let mut pixel_count = 0;
+
+                let mut queue = vec![(x, y)];
+                visited[idx] = true;
+
+                while let Some((cx, cy)) = queue.pop() {
+                    pixel_count += 1;
+                    min_x = min_x.min(cx);
+                    max_x = max_x.max(cx);
+                    min_y = min_y.min(cy);
+                    max_y = max_y.max(cy);
+
+                    let neighbors = [
+                        (cx.wrapping_sub(1), cy),
+                        (cx + 1, cy),
+                        (cx, cy.wrapping_sub(1)),
+                        (cx, cy + 1),
+                    ];
+
+                    for &(nx, ny) in &neighbors {
+                        if nx < w && ny < h {
+                            let nidx = ny * w + nx;
+                            if ink[nidx] && !visited[nidx] {
+                                visited[nidx] = true;
+                                queue.push((nx, ny));
+                            }
+                        }
+                    }
+                }
+
+                let gh = (max_y - min_y + 1) as f64;
+                let gw = (max_x - min_x + 1) as f64;
+
+                // Saring noise (bintik) & hanya ambil komponen yang mirip karakter tunggal
+                if pixel_count >= 8 && gh >= (line_h * 0.35) && gh <= (line_h * 1.3) {
+                    aspect_ratios.push(gw / gh);
+                }
+            }
+        }
+    }
+
+    if aspect_ratios.is_empty() {
+        return false;
+    }
+
+    let avg_aspect_ratio: f64 = aspect_ratios.iter().sum::<f64>() / (aspect_ratios.len() as f64);
+
+    // Font Sistem / Condensed (seperti Oxanium/Gothic) hurufnya ramping & jangkung.
+    // Rasio lebar/tinggi huruf biasanya < 0.58. Font komik membulat biasanya > 0.65.
+    avg_aspect_ratio < 0.58
+}
+
 fn load_u8_gray(image: &Bound<'_, PyAny>) -> PyResult<(usize, usize, Vec<u8>)> {
     if let Ok(a) = image.extract::<PyReadonlyArray2<u8>>() {
         let v = a.as_array();
@@ -241,19 +282,10 @@ fn load_u8_gray(image: &Bound<'_, PyAny>) -> PyResult<(usize, usize, Vec<u8>)> {
         return Ok((h, w, bytes));
     }
     Err(PyTypeError::new_err(
-        "image must be a 2D grayscale NumPy array (uint8/float32/float64), e.g. cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)",
+        "image must be a 2D grayscale NumPy array (uint8/float32/float64)",
     ))
 }
 
-/// Analyze a grayscale text crop and return `{"is_italic": bool, "is_bold": bool}`.
-///
-/// Args:
-///     image: 2D grayscale NumPy array (rows x cols), uint8 preferred.
-///     italic_threshold_deg: slant angle (degrees) above which text is italic.
-///     bold_stroke_ratio: normalized median stroke width (stroke/line-height)
-///         above which text is bold.
-///     bold_ink_density: ink coverage inside the tight ink bounding box above
-///         which text is bold.
 #[pyfunction]
 #[pyo3(signature = (image, italic_threshold_deg=10.0, bold_stroke_ratio=0.15, bold_ink_density=0.40))]
 fn analyze<'py>(
@@ -273,9 +305,9 @@ fn analyze<'py>(
     let (ink, xs, ys) = match binarize(&gray, h, w) {
         Some(v) => v,
         None => {
-            // uniform image (e.g. fully white/black) -> nothing to classify
             out.set_item("is_italic", false)?;
             out.set_item("is_bold", false)?;
+            out.set_item("is_system", false)?;
             return Ok(out);
         }
     };
@@ -283,14 +315,15 @@ fn analyze<'py>(
     if xs.len() < MIN_INK_PIXELS {
         out.set_item("is_italic", false)?;
         out.set_item("is_bold", false)?;
+        out.set_item("is_system", false)?;
         return Ok(out);
     }
 
-    // ---- italic: dominant slant angle ----
+    // 1. Deteksi Italic
     let slant_deg = estimate_slant(&xs, &ys, h as i32, w as i32);
     let is_italic = slant_deg.abs() >= italic_threshold_deg;
 
-    // ---- bold: stroke width ratio + ink density ----
+    // 2. Deteksi Bold
     let d = distance_transform(&ink, h, w);
     let line_h = dominant_line_height(&ink, h, w) as f64;
     let stroke = median_stroke_width(&d, &ink).unwrap_or(0.0);
@@ -311,14 +344,18 @@ fn analyze<'py>(
 
     let is_bold = stroke_ratio >= bold_stroke_ratio || density >= bold_ink_density;
 
+    // 3. Deteksi Font Sistem / Condensed Font Shape
+    let is_system = analyze_glyph_shapes(&ink, h, w, line_h);
+
     out.set_item("is_italic", is_italic)?;
     out.set_item("is_bold", is_bold)?;
+    out.set_item("is_system", is_system)?;
     Ok(out)
 }
 
 #[pymodule]
 fn font_style_rs(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(analyze, m)?)?;
-    m.add("__doc__", "Rust CV analyzer for comic-typesetting: italic/bold detection from a grayscale text crop.")?;
+    m.add("__doc__", "Rust CV analyzer: detects italic, bold, and system/condensed font shape.")?;
     Ok(())
 }

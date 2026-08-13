@@ -1,20 +1,8 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-    "https://bbato.com/read/december-rain/chapter-12", 
-    "https://bbato.com/read/december-rain/chapter-13", 
-    "https://bbato.com/read/december-rain/chapter-14", 
-    "https://bbato.com/read/december-rain/chapter-15", 
-    "https://bbato.com/read/december-rain/chapter-16", 
-    "https://bbato.com/read/december-rain/chapter-17", 
-    "https://bbato.com/read/december-rain/chapter-18", 
-    "https://bbato.com/read/december-rain/chapter-19", 
-    "https://bbato.com/read/december-rain/chapter-20", 
-    "https://bbato.com/read/december-rain/chapter-21", 
-    "https://bbato.com/read/december-rain/chapter-22", 
-   "https://bbato.com/read/december-rain/chapter-23", 
-    "https://bbato.com/read/december-rain/chapter-24", 
-    "https://bbato.com/read/december-rain/chapter-25", 
+    "https://bbato.com/read/hunter-neun-joyonghi-salgo-sipda/chapter-1",
+    "https://bbato.com/read/the-hunter-s-gonna-lay-low/chapter-31"
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking
@@ -22,10 +10,12 @@ URLCHAPTER = [
 FONT_PATH = "font"
 
 FONT_NORMAL = "CC Wild Words Roman.ttf"
-FONT_BOLD = "Oxanium-Bold.ttf"
+FONT_BOLD = "Wild Words Bold Bold.ttf"
 FONT_ITALIC = "CC Wild Words Italic.ttf"
+FONT_BOLD_ITALIC = "CC Wild Words Bold Italic.ttf"
 FONT_SFX = "ComicNoteSmooth.ttf"
-FONT_SISTEM = "Oxanium-Bold.ttf"
+FONT_SISTEM = "Oxanium-Regular.ttf"
+FONT_SISTEM_BOLD = "Oxanium-Bold.ttf"
 
 PROMPT_TRANSLATOR = (
     "Terjemahkan teks komik hasil OCR ini ke bahasa Indonesia yang natural, hidup, dan emosional, "

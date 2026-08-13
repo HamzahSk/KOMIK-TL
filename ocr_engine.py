@@ -85,22 +85,24 @@ class OCREngine:
 
                 # Crop gambar dan ubah ke Grayscale
                 crop_bgr = img[y_min:y_max, x_min:x_max]
-                is_italic, is_bold = False, False
+                is_italic, is_bold, is_system = False, False, False
                 if crop_bgr.size > 0:
                     gray_crop = cv2.cvtColor(crop_bgr, cv2.COLOR_BGR2GRAY)
                     # Panggil modul Rust!
                     style = font_style_rs.analyze(gray_crop)
-                    is_italic = style["is_italic"]
-                    is_bold = style["is_bold"]
+                    is_italic = style.get("is_italic", False)
+                    is_bold = style.get("is_bold", False)
+                    is_system = style.get("is_system", False) # <--- AMBIL IS_SYSTEM DARI RUST
                 # --- AKHIR INTEGRASI RUST ---
 
                 raw_lines.append({
                     "text": clean_text,
                     "box": [x_min, y_min, x_max, y_max],
-                    "angle": angle,            # <-- Menyimpan nilai kemiringan
-                    "is_italic": is_italic,    # <-- Simpan status italic
-                    "is_bold": is_bold,        # <-- Simpan status bold
-                    "true_height": true_height # <-- TAMBAHKAN BARIS INI
+                    "angle": angle,            
+                    "is_italic": is_italic,    
+                    "is_bold": is_bold,        
+                    "is_system": is_system,    # <--- SIMPAN STATUS IS_SYSTEM
+                    "true_height": true_height 
                 })
 
         return self._merge_dialog_bubbles(raw_lines)
@@ -142,9 +144,9 @@ class OCREngine:
                     "box": [min_x, min_y, max_x, max_y],
                     "orig_line_height": sum(l.get('true_height', b[3] - b[1]) for l, b in zip(group_lines, group_boxes)) / len(group_boxes),
                     "angle": sum(group_angles) / len(group_angles),
-                    # Jika ada setidaknya 1 baris di dalam balon yang terdeteksi italic/bold, anggap seluruh balon italic/bold
                     "is_italic": any(l['is_italic'] for l in group_lines),
                     "is_bold": any(l['is_bold'] for l in group_lines),
+                    "is_system": any(l.get('is_system', False) for l in group_lines), # <--- TERUSKAN IS_SYSTEM KE TIAP BALON
                 })
 
         return merged
