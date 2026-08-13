@@ -63,21 +63,25 @@ def _collect_urls(data: Any, out: List[str]) -> None:
             if m not in out:
                 out.append(m)
 
-
-def fetch_chapter_html(url: str, timeout: int = 45, use_browser: bool = True) -> str:
+def fetch_chapter_html(url: str, headers: dict = None, timeout: int = 45, use_browser: bool = True) -> str:
     """Ambil HTML chapter secara synchronous, dengan bypass anti-bot terbaik 2026."""
-    # 1) Fast path: curl_cffi — impersonate TLS Chrome. Sering lolos Cloudflare
-    #    tanpa perlu render JS sama sekali (lebih cepat & lebih stabil).
+    
+    # 1) Fast path: curl_cffi — impersonate TLS Chrome.
     if HAS_CURL_CFFI:
         try:
+            # Gabungkan headers bawaan dengan headers dari scraper
+            req_headers = {
+                "Accept-Language": "en-US,en;q=0.9",
+                "Referer": url.rsplit("/", 2)[0] + "/",
+            }
+            if headers:
+                req_headers.update(headers)
+
             resp = cffi_requests.get(
                 url,
                 impersonate="chrome",
                 timeout=timeout,
-                headers={
-                    "Accept-Language": "en-US,en;q=0.9",
-                    "Referer": url.rsplit("/", 2)[0] + "/",
-                },
+                headers=req_headers,
             )
             if resp.status_code == 200 and "challenge" not in resp.url.lower():
                 return resp.text
@@ -87,11 +91,16 @@ def fetch_chapter_html(url: str, timeout: int = 45, use_browser: bool = True) ->
     if not use_browser or ENGINE == "none":
         return ""
 
-    # 2) Fallback: browser stealthy merender JS (HTML biasa ditolak 403/404).
+    # 2) Fallback: browser stealthy merender JS
     with _browser_cm() as p:
         browser = p.chromium.launch(headless=True)
         try:
             page = browser.new_page()
+            
+            # (Opsional) Set extra headers di browser jika diperlukan
+            if headers:
+                page.set_extra_http_headers(headers)
+                
             page.goto(url, wait_until="domcontentloaded", timeout=timeout * 1000)
             try:
                 page.wait_for_load_state("networkidle", timeout=10000)
@@ -100,7 +109,6 @@ def fetch_chapter_html(url: str, timeout: int = 45, use_browser: bool = True) ->
             return page.content()
         finally:
             browser.close()
-
 
 def get_images_from_network(url: str, timeout: int = 60) -> List[str]:
     """Ambil URL gambar dengan mencegat response JSON API dari browser.
