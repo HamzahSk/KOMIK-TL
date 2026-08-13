@@ -1,106 +1,90 @@
 import json
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
-from curl_cffi import requests as cffi_requests
-from .stealth_helpers import fetch_chapter_html
 
 # Wajib ada agar scraper.py bisa mendeteksi kecocokan URL
 DOMAINS = ["bbato.com"]
+
+# Konfigurasi Domain
 BBATO_URL = "https://bbato.com"
 
-# ==========================================
-# FUNGSI SCRAPING UTAMA
-# ==========================================
 
 def get_chapter_list(manga_url, fetch_func, headers):
     """
     Mengambil daftar chapter khusus dari Bbato.
-    Otomatis fallback ke curl_cffi dan Playwright Sync jika ditolak Cloudflare.
+    Menggunakan fetch_func bawaan dari scraper.py
     """
-    slug = manga_url.strip("/").split("/")[-1]
-    api_url = f"{BBATO_URL}/get-chapter-list?slug={slug}"
-    
-    bbato_headers = headers.copy()
-    bbato_headers.update({
-        'Accept': 'application/json, text/javascript, */*; q=0.01',
-        'X-Requested-With': 'XMLHttpRequest',
-        'Referer': manga_url
-    })
-    
     try:
-        # 1. Coba fetch normal dengan requests standar scraper.py
-        res = fetch_func(api_url, bbato_headers)
-        res_json = res.json()
-    except Exception as e:
-        print(f"[Info Bbato] Requests API gagal ({e}). Mencoba curl_cffi...")
-        try:
-            # 2. Fallback ke curl_cffi (Sangat ringan, membypass perlindungan TLS)
-            res = cffi_requests.get(api_url, headers=bbato_headers, impersonate="chrome120", timeout=30)
-            res_json = res.json()
-        except Exception as e_cffi:
-            print(f"[Info Bbato] curl_cffi gagal ({e_cffi}). Beralih ke Playwright Sync...")
-            try:
-                # 3. Fallback terakhir ke Playwright (meminjam fungsi fetch_chapter_html)
-                raw_html = fetch_chapter_html(api_url, bbato_headers)
-                # Browser biasanya membungkus JSON mentah dalam tag <pre> atau <body>
-                soup_json = BeautifulSoup(raw_html, "html.parser")
-                res_json = json.loads(soup_json.text)
-            except Exception as e_play:
-                print(f"[Error Bbato] Playwright gagal mengambil API chapter: {e_play}")
-                return []
-
-    if not res_json or 'data' not in res_json or not isinstance(res_json['data'], list):
-        return []
+        # Ambil slug/id paling akhir dari URL manga
+        slug = manga_url.strip("/").split("/")[-1]
         
-    chapters = []
-    for ch in res_json['data']:
-        ch_url = f"{BBATO_URL}/read/{slug}/{ch.get('chapter_slug')}"
-        chapters.append({
-            'title': ch.get('chapter_name', 'Unknown_Chapter'),
-            'url': ch_url,
-            'date': ""
+        # Setup headers khusus XMLHttpRequest milik bbato untuk bypass perlindungan
+        bbato_headers = headers.copy()
+        bbato_headers.update({
+            'Accept': 'application/json, text/javascript, */*; q=0.01',
+            'X-Requested-With': 'XMLHttpRequest',
+            'Referer': manga_url
         })
         
-    return chapters
+        api_url = f"{BBATO_URL}/get-chapter-list?slug={slug}"
+        res = fetch_func(api_url, bbato_headers)
+        res_json = res.json()
+        
+        if 'data' not in res_json or not isinstance(res_json['data'], list):
+            return []
+            
+        chapters = []
+        for ch in res_json['data']:
+            # Menyusun URL asli untuk membaca chapter
+            ch_url = f"{BBATO_URL}/read/{slug}/{ch.get('chapter_slug')}"
+            
+            # Format standar yang diharapkan main.py
+            chapters.append({
+                'title': ch.get('chapter_name', 'Unknown_Chapter'),
+                'url': ch_url,
+                'date': ""
+            })
+            
+        return chapters
+
+    except Exception as e:
+        print(f"[Error - Bbato] Gagal mengambil daftar chapter: {e}")
+        return []
 
 
 def fetch_chapter_soup(chapter_url, fetch_func, headers):
     """
     Fetch dan parse HTML menjadi objek soup.
-    Otomatis fallback ke curl_cffi dan Playwright Sync melalui stealth_helpers.
+    Menerima parameter sesuai standar scraper.py.
     """
     try:
         bbato_headers = headers.copy()
         bbato_headers['Referer'] = f"{BBATO_URL}/"
         
-        # Coba cara ringan terlebih dahulu
         res = fetch_func(chapter_url, bbato_headers)
         return BeautifulSoup(res.text, 'html.parser')
         
     except Exception as e:
-        print(f"[Info Bbato] Requests HTML ditolak ({e}). Memanggil module stealth...")
-        
-        # Panggil fungsi Sync secara langsung (tidak perlu await/asyncio.run)
-        html_content = fetch_chapter_html(chapter_url, bbato_headers)
-        if html_content:
-            return BeautifulSoup(html_content, 'html.parser')
+        print(f"[Error - Bbato] Gagal memuat halaman chapter: {e}")
         return None
 
 
 def get_page_list(soup, chapter_url, fetch_func, headers):
     """
     Mengambil list gambar dari objek soup.
-    Karena halaman berhasil diload (entah via requests atau playwright), elemen gambar pasti ada di soup.
+    Format return dibuat kompatibel 100% dengan main.py
     """
     if not soup:
         return []
     
     pages = []
     try:
+        # Mengambil elemen gambar dan menghindari notice-page (seperti di Tachiyomi)
         for idx, img in enumerate(soup.select('.pages .page:not(.notice-page) img')):
             img_url = img.get('data-src') or img.get('src')
             
             if img_url:
+                # Pastikan link gambar berbentuk absolut
                 if not img_url.startswith('http'):
                     img_url = urljoin(BBATO_URL, img_url)
                     
@@ -122,9 +106,13 @@ def get_chapter_name(soup, chapter_url=""):
     Mengambil judul komik dan chapter dari struktur JSON-LD (Breadcrumb) di DOM.
     """
     if not soup:
-        return {"title": "Unknown Title", "chapter_name": "Unknown Chapter"}
+        return {
+            "title": "Unknown Title",
+            "chapter_name": "Unknown Chapter"
+        }
 
     try:
+        # Mencari metadata BreadcrumbList yang tersembunyi di tag script
         scripts = soup.find_all("script", type="application/ld+json")
         for script in scripts:
             if not script.string:
