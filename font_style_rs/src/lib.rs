@@ -161,14 +161,16 @@ fn dominant_line_height(ink: &[bool], h: usize, w: usize) -> usize {
     best
 }
 
-fn estimate_slant(xs: &[i32], ys: &[i32], h: i32, w: i32) -> f64 {
+fn estimate_slant(xs: &[i32], ys: &[i32], h: i32, w: i32) -> (f64, f64) {
     let n = xs.len();
     if n < MIN_INK_PIXELS {
-        return 0.0;
+        return (0.0, 1.0);
     }
     let steps = (MAX_SLANT_DEG / SLANT_STEP_DEG) as i32;
     let mut best_score = 0.0f64;
     let mut best_angle = 0.0f64;
+    let mut zero_score = 0.0f64; // Tambahan: simpan skor saat sudut 0 derajat
+
     let mut ang = -MAX_SLANT_DEG;
     for _ in -steps..=steps {
         let t = ang.to_radians().tan();
@@ -183,17 +185,29 @@ fn estimate_slant(xs: &[i32], ys: &[i32], h: i32, w: i32) -> f64 {
             }
         }
         let score: f64 = hist.iter().map(|&c| (c as f64) * (c as f64)).sum();
+        
         if score > best_score {
             best_score = score;
             best_angle = ang;
         }
+        // Tangkap skor saat tegak lurus
+        if ang == 0.0 {
+            zero_score = score;
+        }
+        
         ang += SLANT_STEP_DEG;
     }
-    best_angle
+    
+    // Hitung rasio keyakinan: seberapa jauh lebih baik sudut miring ini dibanding tegak?
+    let confidence_ratio = if zero_score > 0.0 { best_score / zero_score } else { 1.0 };
+    
+    (best_angle, confidence_ratio)
 }
 
 /// --- FUNGSI BARU: Analisis Bentuk Glyphs (Condensed / System Font Detection) ---
 /// Mengisolasi tiap huruf (connected components) dan menghitung rata-rata rasio lebar/tinggi huruf.
+/// --- FUNGSI BARU: Analisis Bentuk Glyphs (Condensed / System Font Detection) ---
+/// Mengisolasi tiap huruf (connected components) dan menggunakan nilai MEDIAN rasio lebar/tinggi huruf.
 fn analyze_glyph_shapes(ink: &[bool], h: usize, w: usize, line_h: f64) -> bool {
     if h == 0 || w == 0 || line_h < 5.0 {
         return false;
@@ -244,8 +258,9 @@ fn analyze_glyph_shapes(ink: &[bool], h: usize, w: usize, line_h: f64) -> bool {
                 let gh = (max_y - min_y + 1) as f64;
                 let gw = (max_x - min_x + 1) as f64;
 
-                // Saring noise (bintik) & hanya ambil komponen yang mirip karakter tunggal
-                if pixel_count >= 8 && gh >= (line_h * 0.35) && gh <= (line_h * 1.3) {
+                // PERBAIKAN FILTER: Naikkan threshold tinggi minimal menjadi 40% dari line_h (0.40)
+                // Ini mencegah tanda baca kecil atau noise ikut terekap sebagai huruf utuh.
+                if pixel_count >= 10 && gh >= (line_h * 0.40) && gh <= (line_h * 1.5) {
                     aspect_ratios.push(gw / gh);
                 }
             }
@@ -256,11 +271,18 @@ fn analyze_glyph_shapes(ink: &[bool], h: usize, w: usize, line_h: f64) -> bool {
         return false;
     }
 
-    let avg_aspect_ratio: f64 = aspect_ratios.iter().sum::<f64>() / (aspect_ratios.len() as f64);
+    // PERBAIKAN UTAMA: Gunakan Median (Nilai Tengah), bukan Rata-rata.
+    // Mengurutkan rasio dari yang terkecil hingga terbesar
+    aspect_ratios.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+    
+    // Ambil elemen di tengah array
+    let mid_index = aspect_ratios.len() / 2;
+    let median_aspect_ratio = aspect_ratios[mid_index];
 
-    // Font Sistem / Condensed (seperti Oxanium/Gothic) hurufnya ramping & jangkung.
-    // Rasio lebar/tinggi huruf biasanya < 0.58. Font komik membulat biasanya > 0.65.
-    avg_aspect_ratio < 0.58
+    // Font Sistem / Condensed biasanya memiliki median di bawah 0.55.
+    // Font komik (seperti di gambar) biasanya memiliki median di kisaran 0.65 - 0.85.
+    // Threshold 0.60 adalah batas aman yang memisahkan keduanya.
+    median_aspect_ratio < 0.60
 }
 
 fn load_u8_gray(image: &Bound<'_, PyAny>) -> PyResult<(usize, usize, Vec<u8>)> {
@@ -287,13 +309,13 @@ fn load_u8_gray(image: &Bound<'_, PyAny>) -> PyResult<(usize, usize, Vec<u8>)> {
 }
 
 #[pyfunction]
-#[pyo3(signature = (image, italic_threshold_deg=10.0, bold_stroke_ratio=0.15, bold_ink_density=0.40))]
+#[pyo3(signature = (image, italic_threshold_deg=10.0, bold_stroke_ratio=0.18, bold_ink_density=0.40))]
 fn analyze<'py>(
     py: Python<'py>,
     image: &Bound<'py, PyAny>,
     italic_threshold_deg: f64,
     bold_stroke_ratio: f64,
-    bold_ink_density: f64,
+    _bold_ink_density: f64, // Diabaikan karena sering bikin false-positive di komik
 ) -> PyResult<Bound<'py, PyDict>> {
     let (h, w, gray) = load_u8_gray(image)?;
     if h == 0 || w == 0 {
@@ -319,30 +341,19 @@ fn analyze<'py>(
         return Ok(out);
     }
 
-    // 1. Deteksi Italic
-    let slant_deg = estimate_slant(&xs, &ys, h as i32, w as i32);
-    let is_italic = slant_deg.abs() >= italic_threshold_deg;
+    // 1. Deteksi Italic dengan Confidence Score
+    let (slant_deg, slant_confidence) = estimate_slant(&xs, &ys, h as i32, w as i32);
+    // Italic sah JIKA kemiringannya tembus threshold DAN histogramnya 15% lebih rapat dari teks tegak
+    let is_italic = slant_deg.abs() >= italic_threshold_deg && slant_confidence > 1.15;
 
-    // 2. Deteksi Bold
+    // 2. Deteksi Bold (Fokus murni di Stroke Ratio vs Line Height)
     let d = distance_transform(&ink, h, w);
     let line_h = dominant_line_height(&ink, h, w) as f64;
     let stroke = median_stroke_width(&d, &ink).unwrap_or(0.0);
     let stroke_ratio = if line_h > 1.0 { stroke / line_h } else { 0.0 };
 
-    let mut min_x = i32::MAX;
-    let mut max_x = i32::MIN;
-    let mut min_y = i32::MAX;
-    let mut max_y = i32::MIN;
-    for (&x, &y) in xs.iter().zip(ys.iter()) {
-        min_x = min_x.min(x);
-        max_x = max_x.max(x);
-        min_y = min_y.min(y);
-        max_y = max_y.max(y);
-    }
-    let bbox_area = ((max_x - min_x + 1) * (max_y - min_y + 1)) as f64;
-    let density = xs.len() as f64 / bbox_area.max(1.0);
-
-    let is_bold = stroke_ratio >= bold_stroke_ratio || density >= bold_ink_density;
+    // Font bold sejati memiliki ketebalan goresan signifikan dibanding tinggi font
+    let is_bold = stroke_ratio >= bold_stroke_ratio;
 
     // 3. Deteksi Font Sistem / Condensed Font Shape
     let is_system = analyze_glyph_shapes(&ink, h, w, line_h);

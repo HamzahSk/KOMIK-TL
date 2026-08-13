@@ -109,20 +109,22 @@ def get_page_list(soup, chapter_url, fetch_func, headers):
         return []
 
 def get_chapter_name(soup, chapter_url=""):
-    """Mengekstrak judul manga dan nama chapter dari soup halaman baca."""
+    """Mengekstrak judul manga dan nama chapter dari variabel JavaScript di dalam soup."""
     title = "Unknown Title"
     chapter_name = "Unknown Chapter"
     
     if soup:
-        # Coba ambil judul dari breadcrumb atau title tag
-        breadcrumb = soup.select(".breadcrumb li")
-        if len(breadcrumb) >= 3:
-            title = breadcrumb[1].text.strip()
-            chapter_name = breadcrumb[2].text.strip()
-        else:
-            h1 = soup.select_first("h1")
-            if h1:
-                chapter_name = h1.text.strip()
+        # Mengubah objek soup menjadi string HTML utuh
+        html_content = str(soup)
+        
+        # Mencari nilai variabel pageTitle menggunakan Regex
+        title_match = re.search(r'var\s+pageTitle\s*=\s*["\']([^"\']+)["\']', html_content)
+        if title_match:
+            title = title_match.group(1).strip()
+            
+        # Mencari nilai variabel pageSubTitle menggunakan Regex
+        chapter_match = re.search(r'var\s+pageSubTitle\s*=\s*["\']([^"\']+)["\']', html_content)
+        if chapter_match:
+            chapter_name = chapter_match.group(1).strip()
                 
     return {"title": title, "chapter_name": chapter_name}
-    
