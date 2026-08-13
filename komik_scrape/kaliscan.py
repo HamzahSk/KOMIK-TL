@@ -159,13 +159,30 @@ def get_page_list(soup, chapter_url, fetch_func, headers):
 
 def get_chapter_name(soup, chapter_url=""):
     """
-    Mengambil judul komik dan chapter dari Title atau Breadcrumb.
+    Mengambil judul komik dan chapter dari H1 (.chapter-info), Breadcrumb, atau Title.
     """
     if not soup:
         return {"title": "Unknown Title", "chapter_name": "Unknown Chapter"}
         
     try:
-        # Pendekatan 1: Melalui breadcrumb yang umum di MadTheme
+        # Pendekatan Utama: Melalui elemen .chapter-info h1 (Sesuai format HTML baru)
+        chapter_info = soup.select_first(".chapter-info h1")
+        if chapter_info:
+            full_text = chapter_info.text.strip()
+            # Memisahkan format "Blood Poker - Chapter 1" menjadi title dan chapter
+            if " - " in full_text:
+                parts = full_text.split(" - ", 1)
+                return {
+                    "title": parts[0].strip(),
+                    "chapter_name": parts[1].strip()
+                }
+            else:
+                return {
+                    "title": full_text,
+                    "chapter_name": full_text
+                }
+
+        # Pendekatan 1 (Fallback): Melalui breadcrumb yang umum di MadTheme
         breadcrumb_items = soup.select(".breadcrumb li")
         if len(breadcrumb_items) >= 2:
             return {
@@ -173,7 +190,7 @@ def get_chapter_name(soup, chapter_url=""):
                 "chapter_name": breadcrumb_items[-1].text.strip()
             }
             
-        # Pendekatan 2: Fallback ke tag Title
+        # Pendekatan 2 (Fallback): Ke tag Title bawaan HTML
         title_tag = soup.title.string if soup.title else ""
         if title_tag:
             parts = title_tag.split('-')
@@ -192,4 +209,3 @@ def get_chapter_name(soup, chapter_url=""):
     except Exception as e:
         print(f"[Error - KaliScan] Gagal memproses nama chapter: {e}")
         return {"title": "Unknown Title", "chapter_name": "Unknown Chapter"}
-

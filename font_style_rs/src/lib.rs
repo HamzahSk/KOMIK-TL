@@ -202,13 +202,18 @@ fn analyze_glyph_shapes(ink: &[bool], h: usize, w: usize, line_h: f64) -> bool {
     }
 
     let mut visited = vec![false; h * w];
-    let mut aspect_ratios = Vec::new();
+    let mut heights = Vec::new();
+    
+    // Struct untuk menyimpan data garis bawah (max_y) dan tinggi (h) tiap karakter
+    #[derive(Clone, Debug)]
+    struct Glyph { max_y: f64, h: f64 }
+    let mut glyphs = Vec::new();
 
     for y in 0..h {
         for x in 0..w {
             let idx = y * w + x;
             if ink[idx] && !visited[idx] {
-                // BFS Flood-fill sederhana untuk mencari kotak bounding tiap karakter
+                // BFS Flood-fill sederhana untuk kotak bounding tiap karakter
                 let mut min_x = x;
                 let mut max_x = x;
                 let mut min_y = y;
@@ -244,33 +249,80 @@ fn analyze_glyph_shapes(ink: &[bool], h: usize, w: usize, line_h: f64) -> bool {
                 }
 
                 let gh = (max_y - min_y + 1) as f64;
-                let gw = (max_x - min_x + 1) as f64;
 
-                // PERBAIKAN FILTER: Naikkan threshold tinggi minimal menjadi 40% dari line_h (0.40)
-                // Ini mencegah tanda baca kecil atau noise ikut terekap sebagai huruf utuh.
+                // Filter noise, hanya ambil karakter yang ukurannya relevan
                 if pixel_count >= 10 && gh >= (line_h * 0.40) && gh <= (line_h * 1.5) {
-                    aspect_ratios.push(gw / gh);
+                    glyphs.push(Glyph { max_y: max_y as f64, h: gh });
+                    heights.push(gh);
                 }
             }
         }
     }
 
-    if aspect_ratios.is_empty() {
-        return false;
+    if glyphs.len() < 3 {
+        return false; // Kurang dari 3 karakter tidak bisa disimpulkan
     }
 
-    // PERBAIKAN UTAMA: Gunakan Median (Nilai Tengah), bukan Rata-rata.
-    // Mengurutkan rasio dari yang terkecil hingga terbesar
-    aspect_ratios.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+    // --- 1. CEK KONSISTENSI TINGGI (Height Uniformity) ---
+    heights.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+    let median_h = heights[heights.len() / 2];
     
-    // Ambil elemen di tengah array
-    let mid_index = aspect_ratios.len() / 2;
-    let median_aspect_ratio = aspect_ratios[mid_index];
+    // Cari deviasi tinggi dari median
+    let mut h_devs: Vec<f64> = heights.iter().map(|&vh| (vh - median_h).abs()).collect();
+    h_devs.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+    let mad_h = h_devs[h_devs.len() / 2];
 
-    // Font Sistem / Condensed biasanya memiliki median di bawah 0.55.
-    // Font komik (seperti di gambar) biasanya memiliki median di kisaran 0.65 - 0.85.
-    // Threshold 0.60 adalah batas aman yang memisahkan keduanya.
-    median_aspect_ratio < 0.60
+    // --- 2. CEK KERATAAN GARIS BAWAH (Baseline Flatness) ---
+    // Urutkan berdasarkan max_y untuk memisahkan baris jika teksnya multi-line
+    glyphs.sort_unstable_by(|a, b| a.max_y.partial_cmp(&b.max_y).unwrap());
+    
+    let mut baselines = Vec::new();
+    let mut current_group = Vec::new();
+    let mut last_y = glyphs[0].max_y;
+    
+    for g in &glyphs {
+        // Jika beda max_y > 50% tinggi baris, kita anggap itu pindah ke baris teks baru
+        if (g.max_y - last_y).abs() > line_h * 0.5 {
+            if current_group.len() >= 3 {
+                baselines.push(current_group.clone());
+            }
+            current_group = Vec::new();
+        }
+        current_group.push(g.clone());
+        last_y = g.max_y;
+    }
+    if current_group.len() >= 3 {
+        baselines.push(current_group);
+    }
+
+    let mut all_y_deviations = Vec::new();
+    for group in baselines {
+        let mut y_vals: Vec<f64> = group.iter().map(|g| g.max_y).collect();
+        y_vals.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+        let median_y = y_vals[y_vals.len() / 2];
+        
+        for y in y_vals {
+            // Abaikan descender (seperti huruf p, y, g, j yang drop jauh ke bawah)
+            // Hanya perhitungkan base huruf utama
+            if (y - median_y).abs() < line_h * 0.2 {
+                all_y_deviations.push((y - median_y).abs());
+            }
+        }
+    }
+
+    let mad_y = if !all_y_deviations.is_empty() {
+        all_y_deviations.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+        all_y_deviations[all_y_deviations.len() / 2]
+    } else {
+        100.0 // Set sangat tinggi (tidak rata) jika baseline gagal terbaca
+    };
+
+    // --- 3. KESIMPULAN BERDASARKAN DEVIASI ---
+    // Toleransi: Maksimal deviasi 4% dari ukuran font (minimal 1 pixel).
+    // Font sistem deviasinya akan nyaris 0 pixel. Font manga komik akan jauh di atas toleransi ini.
+    let tolerance = (line_h * 0.04).max(1.0); 
+
+    mad_h <= tolerance && mad_y <= tolerance
 }
 
 fn load_u8_gray(image: &Bound<'_, PyAny>) -> PyResult<(usize, usize, Vec<u8>)> {
