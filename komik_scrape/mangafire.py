@@ -6,20 +6,20 @@ from bs4 import BeautifulSoup
 DOMAINS = ['mangafire.to']
 
 # ==========================================
-# PLAYWRIGHT STEALTH INJECTORS
+# PLAYWRIGHT STEALTH INJECTORS (v2.x API)
 # ==========================================
 async def _get_html_with_playwright(url):
     """Menggunakan Playwright untuk mengambil HTML dan mem-bypass Cloudflare."""
     from playwright.async_api import async_playwright
-    from playwright_stealth import stealth_async
+    from playwright_stealth import Stealth
     
-    async with async_playwright() as p:
+    # Membungkus playwright dengan class Stealth() standar v2.0+
+    async with Stealth().use_async(async_playwright()) as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
         page = await context.new_page()
-        await stealth_async(page)
         
         # Buka halaman dan tunggu sampai HTML ter-load
         await page.goto(url, wait_until="domcontentloaded", timeout=30000)
@@ -31,17 +31,16 @@ async def _get_html_with_playwright(url):
 async def _get_pages_with_playwright(chapter_url):
     """Menyadap response API gambar dari background browser."""
     from playwright.async_api import async_playwright
-    from playwright_stealth import stealth_async
+    from playwright_stealth import Stealth
 
     pages_list = []
     
-    async with async_playwright() as p:
+    async with Stealth().use_async(async_playwright()) as p:
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
         page = await context.new_page()
-        await stealth_async(page)
         
         ajax_response_data = None
         
