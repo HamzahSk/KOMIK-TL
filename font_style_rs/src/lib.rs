@@ -161,16 +161,14 @@ fn dominant_line_height(ink: &[bool], h: usize, w: usize) -> usize {
     best
 }
 
-fn estimate_slant(xs: &[i32], ys: &[i32], h: i32, w: i32) -> (f64, f64) {
+fn estimate_slant(xs: &[i32], ys: &[i32], h: i32, w: i32) -> f64 {
     let n = xs.len();
     if n < MIN_INK_PIXELS {
-        return (0.0, 1.0);
+        return 0.0;
     }
     let steps = (MAX_SLANT_DEG / SLANT_STEP_DEG) as i32;
     let mut best_score = 0.0f64;
     let mut best_angle = 0.0f64;
-    let mut zero_score = 0.0f64; // Tambahan: simpan skor saat sudut 0 derajat
-
     let mut ang = -MAX_SLANT_DEG;
     for _ in -steps..=steps {
         let t = ang.to_radians().tan();
@@ -185,23 +183,13 @@ fn estimate_slant(xs: &[i32], ys: &[i32], h: i32, w: i32) -> (f64, f64) {
             }
         }
         let score: f64 = hist.iter().map(|&c| (c as f64) * (c as f64)).sum();
-        
         if score > best_score {
             best_score = score;
             best_angle = ang;
         }
-        // Tangkap skor saat tegak lurus
-        if ang == 0.0 {
-            zero_score = score;
-        }
-        
         ang += SLANT_STEP_DEG;
     }
-    
-    // Hitung rasio keyakinan: seberapa jauh lebih baik sudut miring ini dibanding tegak?
-    let confidence_ratio = if zero_score > 0.0 { best_score / zero_score } else { 1.0 };
-    
-    (best_angle, confidence_ratio)
+    best_angle
 }
 
 /// --- FUNGSI BARU: Analisis Bentuk Glyphs (Condensed / System Font Detection) ---
@@ -309,13 +297,13 @@ fn load_u8_gray(image: &Bound<'_, PyAny>) -> PyResult<(usize, usize, Vec<u8>)> {
 }
 
 #[pyfunction]
-#[pyo3(signature = (image, italic_threshold_deg=10.0, bold_stroke_ratio=0.18, bold_ink_density=0.40))]
+#[pyo3(signature = (image, italic_threshold_deg=10.0, bold_stroke_ratio=0.15, bold_ink_density=0.40))]
 fn analyze<'py>(
     py: Python<'py>,
     image: &Bound<'py, PyAny>,
     italic_threshold_deg: f64,
     bold_stroke_ratio: f64,
-    _bold_ink_density: f64, // Diabaikan karena sering bikin false-positive di komik
+    bold_ink_density: f64,
 ) -> PyResult<Bound<'py, PyDict>> {
     let (h, w, gray) = load_u8_gray(image)?;
     if h == 0 || w == 0 {
@@ -341,19 +329,30 @@ fn analyze<'py>(
         return Ok(out);
     }
 
-    // 1. Deteksi Italic dengan Confidence Score
-    let (slant_deg, slant_confidence) = estimate_slant(&xs, &ys, h as i32, w as i32);
-    // Italic sah JIKA kemiringannya tembus threshold DAN histogramnya 15% lebih rapat dari teks tegak
-    let is_italic = slant_deg.abs() >= italic_threshold_deg && slant_confidence > 1.15;
+    // 1. Deteksi Italic
+    let slant_deg = estimate_slant(&xs, &ys, h as i32, w as i32);
+    let is_italic = slant_deg.abs() >= italic_threshold_deg;
 
-    // 2. Deteksi Bold (Fokus murni di Stroke Ratio vs Line Height)
+    // 2. Deteksi Bold
     let d = distance_transform(&ink, h, w);
     let line_h = dominant_line_height(&ink, h, w) as f64;
     let stroke = median_stroke_width(&d, &ink).unwrap_or(0.0);
     let stroke_ratio = if line_h > 1.0 { stroke / line_h } else { 0.0 };
 
-    // Font bold sejati memiliki ketebalan goresan signifikan dibanding tinggi font
-    let is_bold = stroke_ratio >= bold_stroke_ratio;
+    let mut min_x = i32::MAX;
+    let mut max_x = i32::MIN;
+    let mut min_y = i32::MAX;
+    let mut max_y = i32::MIN;
+    for (&x, &y) in xs.iter().zip(ys.iter()) {
+        min_x = min_x.min(x);
+        max_x = max_x.max(x);
+        min_y = min_y.min(y);
+        max_y = max_y.max(y);
+    }
+    let bbox_area = ((max_x - min_x + 1) * (max_y - min_y + 1)) as f64;
+    let density = xs.len() as f64 / bbox_area.max(1.0);
+
+    let is_bold = stroke_ratio >= bold_stroke_ratio || density >= bold_ink_density;
 
     // 3. Deteksi Font Sistem / Condensed Font Shape
     let is_system = analyze_glyph_shapes(&ink, h, w, line_h);
