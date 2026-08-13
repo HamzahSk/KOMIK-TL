@@ -5,3 +5,5 @@ pillow
 numpy<2
 requests
 beautifulsoup4
+playwright
+playwright-stealth
