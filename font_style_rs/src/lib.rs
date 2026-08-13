@@ -201,13 +201,12 @@ fn analyze_glyph_shapes(ink: &[bool], h: usize, w: usize, line_h: f64) -> bool {
 
     let mut visited = vec![false; h * w];
     let mut aspect_ratios = Vec::new();
-    let mut heights = Vec::new(); // Tambahan: untuk menyimpan tinggi tiap karakter
+    let mut heights = Vec::new(); 
 
     for y in 0..h {
         for x in 0..w {
             let idx = y * w + x;
             if ink[idx] && !visited[idx] {
-                // BFS Flood-fill sederhana untuk mencari kotak bounding tiap karakter
                 let mut min_x = x;
                 let mut max_x = x;
                 let mut min_y = y;
@@ -248,7 +247,7 @@ fn analyze_glyph_shapes(ink: &[bool], h: usize, w: usize, line_h: f64) -> bool {
                 // Saring noise (bintik) & hanya ambil komponen yang mirip karakter tunggal
                 if pixel_count >= 8 && gh >= (line_h * 0.35) && gh <= (line_h * 1.3) {
                     aspect_ratios.push(gw / gh);
-                    heights.push(gh); // Simpan data tinggi karakter
+                    heights.push(gh); 
                 }
             }
         }
@@ -261,18 +260,30 @@ fn analyze_glyph_shapes(ink: &[bool], h: usize, w: usize, line_h: f64) -> bool {
     // 1. Cek Rata-rata Rasio Kerampingan Font
     let avg_aspect_ratio: f64 = aspect_ratios.iter().sum::<f64>() / (aspect_ratios.len() as f64);
 
-    // 2. Cek Konsistensi Tinggi Font (Mencari Standard Deviation)
+    // 2. Cek Konsistensi Tinggi Font (Standard Deviation Tinggi)
     let avg_height: f64 = heights.iter().sum::<f64>() / (heights.len() as f64);
     let variance_height: f64 = heights.iter()
         .map(|&gh| (gh - avg_height).powi(2))
         .sum::<f64>() / (heights.len() as f64);
     let std_dev_height = variance_height.sqrt();
 
-    // KESIMPULAN
-    // - avg_aspect_ratio < 0.56: Memastikan bentuk fontnya ramping (diturunkan sedikit agar lebih aman).
-    // - std_dev_height <= 1.5: Memastikan tingginya sangat konsisten/rata (selisih tinggi antar huruf maksimal kisaran 1.5 pixel).
+    // 3. Cek Konsistensi Lebar Huruf (Standard Deviation Aspect Ratio)
+    let variance_aspect: f64 = aspect_ratios.iter()
+        .map(|&ar| (ar - avg_aspect_ratio).powi(2))
+        .sum::<f64>() / (aspect_ratios.len() as f64);
+    let std_dev_aspect = variance_aspect.sqrt();
+
+    // --- PENYESUAIAN THRESHOLD ---
+    // Buat toleransi tinggi menjadi dinamis (maksimal 4% dari tinggi baris teks, minimal 1.2 pixel)
+    // Jadi untuk teks resolusi besar, toleransinya ikut menyesuaikan agar tidak oversensitive.
+    let height_threshold = (line_h * 0.04).max(1.2); 
+
+    // KESIMPULAN:
+    // - Font ramping (avg_aspect_ratio < 0.57)
+    // - Tinggi huruf sangat konsisten rata (std_dev_height <= height_threshold)
+    // - Variasi lebar antar huruf kaku/seragam (std_dev_aspect <= 0.15)
     
-    avg_aspect_ratio < 0.56 && std_dev_height <= 1.5
+    avg_aspect_ratio < 0.57 && std_dev_height <= height_threshold && std_dev_aspect <= 0.15
 }
 
 fn load_u8_gray(image: &Bound<'_, PyAny>) -> PyResult<(usize, usize, Vec<u8>)> {

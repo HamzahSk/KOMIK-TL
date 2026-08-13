@@ -158,54 +158,22 @@ def get_page_list(soup, chapter_url, fetch_func, headers):
 
 
 def get_chapter_name(soup, chapter_url=""):
-    """
-    Mengambil judul komik dan chapter dari H1 (.chapter-info), Breadcrumb, atau Title.
-    """
-    if not soup:
-        return {"title": "Unknown Title", "chapter_name": "Unknown Chapter"}
+    """Mengekstrak judul manga dan nama chapter dari variabel JavaScript di dalam soup."""
+    title = "Unknown Title"
+    chapter_name = "Unknown Chapter"
+    
+    if soup:
+        # Mengubah objek soup menjadi string HTML utuh
+        html_content = str(soup)
         
-    try:
-        # Pendekatan Utama: Melalui elemen .chapter-info h1 (Sesuai format HTML baru)
-        chapter_info = soup.select_first(".chapter-info h1")
-        if chapter_info:
-            full_text = chapter_info.text.strip()
-            # Memisahkan format "Blood Poker - Chapter 1" menjadi title dan chapter
-            if " - " in full_text:
-                parts = full_text.split(" - ", 1)
-                return {
-                    "title": parts[0].strip(),
-                    "chapter_name": parts[1].strip()
-                }
-            else:
-                return {
-                    "title": full_text,
-                    "chapter_name": full_text
-                }
-
-        # Pendekatan 1 (Fallback): Melalui breadcrumb yang umum di MadTheme
-        breadcrumb_items = soup.select(".breadcrumb li")
-        if len(breadcrumb_items) >= 2:
-            return {
-                "title": breadcrumb_items[-2].text.strip(),
-                "chapter_name": breadcrumb_items[-1].text.strip()
-            }
+        # Mencari nilai variabel pageTitle menggunakan Regex
+        title_match = re.search(r'var\s+pageTitle\s*=\s*["\']([^"\']+)["\']', html_content)
+        if title_match:
+            title = title_match.group(1).strip()
             
-        # Pendekatan 2 (Fallback): Ke tag Title bawaan HTML
-        title_tag = soup.title.string if soup.title else ""
-        if title_tag:
-            parts = title_tag.split('-')
-            if len(parts) > 1:
-                return {
-                    "title": parts[0].strip(),
-                    "chapter_name": parts[1].strip()
-                }
-            return {
-                "title": parts[0].strip(),
-                "chapter_name": parts[0].strip()
-            }
-            
-        return {"title": "Unknown Title", "chapter_name": "Unknown Chapter"}
-        
-    except Exception as e:
-        print(f"[Error - KaliScan] Gagal memproses nama chapter: {e}")
-        return {"title": "Unknown Title", "chapter_name": "Unknown Chapter"}
+        # Mencari nilai variabel pageSubTitle menggunakan Regex
+        chapter_match = re.search(r'var\s+pageSubTitle\s*=\s*["\']([^"\']+)["\']', html_content)
+        if chapter_match:
+            chapter_name = chapter_match.group(1).strip()
+                
+    return {"title": title, "chapter_name": chapter_name}
