@@ -194,26 +194,20 @@ fn estimate_slant(xs: &[i32], ys: &[i32], h: i32, w: i32) -> f64 {
 
 /// --- FUNGSI BARU: Analisis Bentuk Glyphs (Condensed / System Font Detection) ---
 /// Mengisolasi tiap huruf (connected components) dan menghitung rata-rata rasio lebar/tinggi huruf.
-/// --- FUNGSI BARU: Analisis Bentuk Glyphs (Condensed / System Font Detection) ---
-/// Mengisolasi tiap huruf (connected components) dan menggunakan nilai MEDIAN rasio lebar/tinggi huruf.
 fn analyze_glyph_shapes(ink: &[bool], h: usize, w: usize, line_h: f64) -> bool {
     if h == 0 || w == 0 || line_h < 5.0 {
         return false;
     }
 
     let mut visited = vec![false; h * w];
-    let mut heights = Vec::new();
-    
-    // Struct untuk menyimpan data garis bawah (max_y) dan tinggi (h) tiap karakter
-    #[derive(Clone, Debug)]
-    struct Glyph { max_y: f64, h: f64 }
-    let mut glyphs = Vec::new();
+    let mut aspect_ratios = Vec::new();
+    let mut heights = Vec::new(); // Tambahan: untuk menyimpan tinggi tiap karakter
 
     for y in 0..h {
         for x in 0..w {
             let idx = y * w + x;
             if ink[idx] && !visited[idx] {
-                // BFS Flood-fill sederhana untuk kotak bounding tiap karakter
+                // BFS Flood-fill sederhana untuk mencari kotak bounding tiap karakter
                 let mut min_x = x;
                 let mut max_x = x;
                 let mut min_y = y;
@@ -249,80 +243,36 @@ fn analyze_glyph_shapes(ink: &[bool], h: usize, w: usize, line_h: f64) -> bool {
                 }
 
                 let gh = (max_y - min_y + 1) as f64;
+                let gw = (max_x - min_x + 1) as f64;
 
-                // Filter noise, hanya ambil karakter yang ukurannya relevan
-                if pixel_count >= 10 && gh >= (line_h * 0.40) && gh <= (line_h * 1.5) {
-                    glyphs.push(Glyph { max_y: max_y as f64, h: gh });
-                    heights.push(gh);
+                // Saring noise (bintik) & hanya ambil komponen yang mirip karakter tunggal
+                if pixel_count >= 8 && gh >= (line_h * 0.35) && gh <= (line_h * 1.3) {
+                    aspect_ratios.push(gw / gh);
+                    heights.push(gh); // Simpan data tinggi karakter
                 }
             }
         }
     }
 
-    if glyphs.len() < 3 {
-        return false; // Kurang dari 3 karakter tidak bisa disimpulkan
+    if aspect_ratios.is_empty() || heights.is_empty() {
+        return false;
     }
 
-    // --- 1. CEK KONSISTENSI TINGGI (Height Uniformity) ---
-    heights.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
-    let median_h = heights[heights.len() / 2];
+    // 1. Cek Rata-rata Rasio Kerampingan Font
+    let avg_aspect_ratio: f64 = aspect_ratios.iter().sum::<f64>() / (aspect_ratios.len() as f64);
+
+    // 2. Cek Konsistensi Tinggi Font (Mencari Standard Deviation)
+    let avg_height: f64 = heights.iter().sum::<f64>() / (heights.len() as f64);
+    let variance_height: f64 = heights.iter()
+        .map(|&gh| (gh - avg_height).powi(2))
+        .sum::<f64>() / (heights.len() as f64);
+    let std_dev_height = variance_height.sqrt();
+
+    // KESIMPULAN
+    // - avg_aspect_ratio < 0.56: Memastikan bentuk fontnya ramping (diturunkan sedikit agar lebih aman).
+    // - std_dev_height <= 1.5: Memastikan tingginya sangat konsisten/rata (selisih tinggi antar huruf maksimal kisaran 1.5 pixel).
     
-    // Cari deviasi tinggi dari median
-    let mut h_devs: Vec<f64> = heights.iter().map(|&vh| (vh - median_h).abs()).collect();
-    h_devs.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
-    let mad_h = h_devs[h_devs.len() / 2];
-
-    // --- 2. CEK KERATAAN GARIS BAWAH (Baseline Flatness) ---
-    // Urutkan berdasarkan max_y untuk memisahkan baris jika teksnya multi-line
-    glyphs.sort_unstable_by(|a, b| a.max_y.partial_cmp(&b.max_y).unwrap());
-    
-    let mut baselines = Vec::new();
-    let mut current_group = Vec::new();
-    let mut last_y = glyphs[0].max_y;
-    
-    for g in &glyphs {
-        // Jika beda max_y > 50% tinggi baris, kita anggap itu pindah ke baris teks baru
-        if (g.max_y - last_y).abs() > line_h * 0.5 {
-            if current_group.len() >= 3 {
-                baselines.push(current_group.clone());
-            }
-            current_group = Vec::new();
-        }
-        current_group.push(g.clone());
-        last_y = g.max_y;
-    }
-    if current_group.len() >= 3 {
-        baselines.push(current_group);
-    }
-
-    let mut all_y_deviations = Vec::new();
-    for group in baselines {
-        let mut y_vals: Vec<f64> = group.iter().map(|g| g.max_y).collect();
-        y_vals.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
-        let median_y = y_vals[y_vals.len() / 2];
-        
-        for y in y_vals {
-            // Abaikan descender (seperti huruf p, y, g, j yang drop jauh ke bawah)
-            // Hanya perhitungkan base huruf utama
-            if (y - median_y).abs() < line_h * 0.2 {
-                all_y_deviations.push((y - median_y).abs());
-            }
-        }
-    }
-
-    let mad_y = if !all_y_deviations.is_empty() {
-        all_y_deviations.sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
-        all_y_deviations[all_y_deviations.len() / 2]
-    } else {
-        100.0 // Set sangat tinggi (tidak rata) jika baseline gagal terbaca
-    };
-
-    // --- 3. KESIMPULAN BERDASARKAN DEVIASI ---
-    // Toleransi: Maksimal deviasi 4% dari ukuran font (minimal 1 pixel).
-    // Font sistem deviasinya akan nyaris 0 pixel. Font manga komik akan jauh di atas toleransi ini.
-    let tolerance = (line_h * 0.04).max(1.0); 
-
-    mad_h <= tolerance && mad_y <= tolerance
+    avg_aspect_ratio < 0.56 && std_dev_height <= 1.5
 }
 
 fn load_u8_gray(image: &Bound<'_, PyAny>) -> PyResult<(usize, usize, Vec<u8>)> {
