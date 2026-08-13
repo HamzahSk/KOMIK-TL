@@ -7,3 +7,4 @@ requests
 beautifulsoup4
 playwright
 playwright-stealth
+curl_cffi
