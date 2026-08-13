@@ -4,11 +4,17 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 
 # Wajib ada agar scraper.py bisa mendeteksi kecocokan URL
-# Mengambil dari mirror yang ada di build.gradle.kts
 DOMAINS = ["kaliscan.com", "kaliscan.me", "kaliscan.io", "mgjinx.com"]
 
 # Konfigurasi Domain Utama
 BASE_URL = "https://kaliscan.com"
+
+# Konfigurasi Header bawaan dengan Base URL
+DEFAULT_HEADERS = {
+    "Referer": f"{BASE_URL}/",
+    "Origin": BASE_URL,
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+}
 
 
 def get_chapter_list(manga_url, fetch_func, headers):
@@ -17,6 +23,9 @@ def get_chapter_list(manga_url, fetch_func, headers):
     Mendukung legacy API backend service seperti yang ada di KaliScanCom.kt
     """
     try:
+        # Menggabungkan header dari parameter dengan DEFAULT_HEADERS
+        ks_headers = {**DEFAULT_HEADERS, **(headers or {})}
+
         # KaliScan menggunakan useLegacyApi = true, jadi kita perlu ambil manga_id
         manga_id_match = re.search(r"/manga/(\d+)-", manga_url)
         
@@ -24,13 +33,13 @@ def get_chapter_list(manga_url, fetch_func, headers):
             manga_id = manga_id_match.group(1)
             # URL API khusus MadTheme Legacy
             api_url = f"{BASE_URL}/service/backend/chaplist/?manga_id={manga_id}"
-            res = fetch_func(api_url, headers)
+            res = fetch_func(api_url, ks_headers)
             soup = BeautifulSoup(res.text, 'html.parser')
             # Selector list dari MadTheme
             items = soup.select("#chapter-list > li") or soup.select("li")
         else:
             # Fallback jika URL tidak mengandung manga_id standar
-            res = fetch_func(manga_url, headers)
+            res = fetch_func(manga_url, ks_headers)
             soup = BeautifulSoup(res.text, 'html.parser')
             items = soup.select("#chapter-list > li")
             
@@ -70,8 +79,8 @@ def fetch_chapter_soup(chapter_url, fetch_func, headers):
     Menerima parameter sesuai standar scraper.py.
     """
     try:
-        ks_headers = headers.copy()
-        ks_headers['Referer'] = f"{BASE_URL}/"
+        # Menggunakan header yang sudah diperbarui dengan BASE_URL
+        ks_headers = {**DEFAULT_HEADERS, **(headers or {})}
         
         res = fetch_func(chapter_url, ks_headers)
         return BeautifulSoup(res.text, 'html.parser')
@@ -90,6 +99,7 @@ def get_page_list(soup, chapter_url, fetch_func, headers):
         return []
     
     try:
+        ks_headers = {**DEFAULT_HEADERS, **(headers or {})}
         html_content = str(soup)
         
         # 1. Cek apakah chapter perlu difetch melalui Chapter Server (MadTheme logic)
@@ -97,7 +107,7 @@ def get_page_list(soup, chapter_url, fetch_func, headers):
         if chapter_id_match:
             chapter_id = chapter_id_match.group(1)
             api_url = f"{BASE_URL}/service/backend/chapterServer/?server_id=1&chapter_id={chapter_id}"
-            res = fetch_func(api_url, headers)
+            res = fetch_func(api_url, ks_headers)
             html_content = res.text
 
         pages = []
