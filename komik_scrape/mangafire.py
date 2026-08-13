@@ -6,62 +6,68 @@ from bs4 import BeautifulSoup
 DOMAINS = ['mangafire.to']
 
 # ==========================================
-# PLAYWRIGHT STEALTH INJECTOR
+# PLAYWRIGHT STEALTH INJECTORS
 # ==========================================
+async def _get_html_with_playwright(url):
+    """Menggunakan Playwright untuk mengambil HTML dan mem-bypass Cloudflare."""
+    from playwright.async_api import async_playwright
+    from playwright_stealth import stealth_async
+    
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        )
+        page = await context.new_page()
+        await stealth_async(page)
+        
+        # Buka halaman dan tunggu sampai HTML ter-load
+        await page.goto(url, wait_until="domcontentloaded", timeout=30000)
+        html_content = await page.content()
+        await browser.close()
+        
+        return html_content
+
 async def _get_pages_with_playwright(chapter_url):
-    """
-    Fungsi async untuk menjalankan Playwright dengan mode Stealth.
-    Fungsi ini akan membuka halaman chapter dan menyadap response JSON 
-    dari endpoint ajax/read/... tanpa perlu meretas token vrf secara manual.
-    """
+    """Menyadap response API gambar dari background browser."""
     from playwright.async_api import async_playwright
     from playwright_stealth import stealth_async
 
     pages_list = []
     
     async with async_playwright() as p:
-        # Launch browser Chromium headless
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
         page = await context.new_page()
-        
-        # Terapkan stealth untuk bypass deteksi bot/Cloudflare
         await stealth_async(page)
         
         ajax_response_data = None
         
         async def handle_response(response):
             nonlocal ajax_response_data
-            # Tangkap response dari endpoint Ajax MangaFire yang memuat daftar gambar
             if "ajax/read/chapter" in response.url or "ajax/read/volume" in response.url:
                 try:
                     ajax_response_data = await response.json()
                 except:
                     pass
                     
-        # Pasang listener untuk setiap response jaringan
         page.on("response", handle_response)
         
         try:
-            # Buka halaman chapter dan tunggu hingga jaringan tenang (networkidle)
-            await page.goto(chapter_url, wait_until="networkidle", timeout=25000)
-            # Beri sedikit waktu tambahan jaga-jaga JS masih mengeksekusi request
+            await page.goto(chapter_url, wait_until="networkidle", timeout=30000)
             await page.wait_for_timeout(2000)
         except Exception as e:
-            print(f"[Info] Playwright timeout/terkendala saat memuat halaman: {e}")
+            print(f"[Info] Playwright timeout (gambar): {e}")
             
         await browser.close()
         
-    # Jika berhasil menangkap response, parse daftar gambarnya
     if ajax_response_data and "result" in ajax_response_data:
         images_data = ajax_response_data["result"].get("images", [])
         for img in images_data:
             url = img[0]
             offset = int(img[2]) if len(img) > 2 else 0
-            
-            # Tambahkan tag scrambled jika offset > 0 (sesuai Kotlin)
             image_url = f"{url}#scrambled_{offset}" if offset > 0 else url
             pages_list.append(image_url)
             
@@ -77,14 +83,12 @@ def _get_manga_id(url):
     return clean_url.split('.')[-1]
 
 def get_chapter_list(manga_url, fetch_func, headers):
-    """Mengambil list chapter khusus bahasa Inggris (en)."""
     manga_id = _get_manga_id(manga_url)
     lang_code = "en" 
     
     ajax_url = f"https://mangafire.to/ajax/manga/{manga_id}/chapter/{lang_code}"
     
     try:
-        # Endpoint ini biasanya tidak dikunci seketat chapter read, aman pakai requests
         res = fetch_func(ajax_url, headers)
         data = res.json()
         
@@ -125,35 +129,33 @@ def get_chapter_list(manga_url, fetch_func, headers):
         return []
 
 def fetch_chapter_soup(chapter_url, fetch_func, headers):
+    """Ambil HTML. Jika requests ditolak 403, gunakan Playwright Stealth."""
     try:
+        # Coba cara cepat dulu
         res = fetch_func(chapter_url, headers)
         return BeautifulSoup(res.text, 'html.parser')
     except Exception as e:
-        print(f"[Error MangaFire] Gagal memuat HTML chapter: {e}")
-        return None
+        print(f"[Info MangaFire] Requests ditolak Cloudflare ({e}). Membuka browser Playwright untuk memuat HTML...")
+        try:
+            html_content = asyncio.run(_get_html_with_playwright(chapter_url))
+            return BeautifulSoup(html_content, 'html.parser')
+        except Exception as play_e:
+            print(f"[Error MangaFire] Playwright gagal memuat HTML: {play_e}")
+            return None
 
 def get_page_list(soup, chapter_url, fetch_func, headers):
-    """
-    Mencoba mengambil gambar dengan Playwright Stealth terlebih dahulu.
-    Jika gagal/error, akan fallback ke metode Requests + CORS proxy.
-    """
-    print("[MangaFire] Mencoba mengekstrak halaman menggunakan Playwright Stealth...")
+    print("[MangaFire] Mencoba mengekstrak gambar menggunakan Playwright...")
     pages = []
     
-    # 1. Coba Menggunakan Playwright Stealth
     try:
-        # Karena dipanggil dari environment synchronous (requests), kita jalankan event loop
         pages = asyncio.run(_get_pages_with_playwright(chapter_url))
         if pages:
             print("[MangaFire] Berhasil mendapatkan halaman via Playwright.")
             return pages
-    except ImportError:
-        print("[Warning] 'playwright' atau 'playwright-stealth' belum diinstal. Beralih ke fallback requests...")
     except Exception as e:
         print(f"[Error Playwright] {e}. Beralih ke fallback requests...")
 
-    # 2. Fallback menggunakan requests biasa + CORS proxy (sesuai permintaanmu)
-    print("[MangaFire] Menjalankan Fallback Requests...")
+    print("[MangaFire] Menjalankan Fallback Requests untuk gambar...")
     try:
         chapter_wrapper = soup.select_first("[data-id]")
         if not chapter_wrapper:
@@ -176,7 +178,7 @@ def get_page_list(soup, chapter_url, fetch_func, headers):
             
         return pages
     except Exception as e:
-        print(f"[Error MangaFire Fallback] Gagal mengambil API karena tidak ada token VRF: {e}")
+        print(f"[Error MangaFire Fallback] Gagal: {e}")
         return []
 
 def get_chapter_name(soup, chapter_url=""):

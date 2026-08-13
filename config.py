@@ -2,7 +2,7 @@
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
     "https://mangafire.to/title/81qlv-b-grade-guide/8681731-chapter-2-en",
-    "https://mangafire.to/title/81qlv-b-grade-guide/8681732-chapter-3-en",
+    "https://mangafire.to/title/81qlv-b-grade-guide/8681732-chapter-3-en"
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking
