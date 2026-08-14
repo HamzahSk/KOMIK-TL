@@ -1,18 +1,19 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-    "https://kaliscan.com/manga/3172-radio-storm/chapter-1",
-    "https://kaliscan.com/manga/3172-radio-storm/chapter-2",
-    "https://kaliscan.com/manga/3172-radio-storm/chapter-3",
-    "https://kaliscan.com/manga/3172-radio-storm/chapter-4",
-    "https://kaliscan.com/manga/3172-radio-storm/chapter-5",
-    "https://kaliscan.com/manga/3172-radio-storm/chapter-6"
-    "https://kaliscan.com/manga/3172-radio-storm/chapter-7",
-    "https://kaliscan.com/manga/3172-radio-storm/chapter-8",
-    "https://kaliscan.com/manga/3172-radio-storm/chapter-9",
-    "https://kaliscan.com/manga/3172-radio-storm/chapter-10",
-    "https://kaliscan.com/manga/3172-radio-storm/chapter-11",
-    "https://kaliscan.com/manga/3172-radio-storm/chapter-12"
+    "https://kaliscan.com/manga/17716-december-rain/chapter-37",
+    "https://kaliscan.com/manga/17716-december-rain/chapter-38",
+    "https://kaliscan.com/manga/17716-december-rain/chapter-39",
+    "https://kaliscan.com/manga/17716-december-rain/chapter-40",
+    "https://kaliscan.com/manga/17716-december-rain/chapter-41",
+    "https://kaliscan.com/manga/17716-december-rain/chapter-42",
+    "https://kaliscan.com/manga/17716-december-rain/chapter-43",
+    "https://kaliscan.com/manga/17716-december-rain/chapter-44",
+    "https://kaliscan.com/manga/17716-december-rain/chapter-45",
+    "https://kaliscan.com/manga/17716-december-rain/chapter-46",
+    "https://kaliscan.com/manga/17716-december-rain/chapter-47",
+    "https://kaliscan.com/manga/17716-december-rain/chapter-48",
+    "https://kaliscan.com/manga/17716-december-rain/chapter-49",
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking  https://kaliscan.com/manga/3172-radio-storm/chapter-2
