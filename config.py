@@ -1,19 +1,15 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-    "https://kaliscan.com/manga/17716-december-rain/chapter-37",
-    "https://kaliscan.com/manga/17716-december-rain/chapter-38",
-    "https://kaliscan.com/manga/17716-december-rain/chapter-39",
-    "https://kaliscan.com/manga/17716-december-rain/chapter-40",
-    "https://kaliscan.com/manga/17716-december-rain/chapter-41",
-    "https://kaliscan.com/manga/17716-december-rain/chapter-42",
-    "https://kaliscan.com/manga/17716-december-rain/chapter-43",
-    "https://kaliscan.com/manga/17716-december-rain/chapter-44",
-    "https://kaliscan.com/manga/17716-december-rain/chapter-45",
-    "https://kaliscan.com/manga/17716-december-rain/chapter-46",
-    "https://kaliscan.com/manga/17716-december-rain/chapter-47",
-    "https://kaliscan.com/manga/17716-december-rain/chapter-48",
-    "https://kaliscan.com/manga/17716-december-rain/chapter-49",
+    "https://kaliscan.com/manga/44520-home-far-away/chapter-1",
+    "https://kaliscan.com/manga/44520-home-far-away/chapter-1.2",
+    "https://kaliscan.com/manga/44520-home-far-away/chapter-2",
+    "https://kaliscan.com/manga/44520-home-far-away/chapter-2.5",
+    "https://kaliscan.com/manga/44520-home-far-away/chapter-3",
+    "https://kaliscan.com/manga/44520-home-far-away/chapter-3.5",
+    "https://kaliscan.com/manga/44520-home-far-away/chapter-4",
+    "https://kaliscan.com/manga/44520-home-far-away/chapter-4.5",
+    "https://kaliscan.com/manga/44520-home-far-away/chapter-5",
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking  https://kaliscan.com/manga/3172-radio-storm/chapter-2
