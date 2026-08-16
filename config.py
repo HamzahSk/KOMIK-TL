@@ -1,8 +1,13 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-    "https://bbato.com/read/december-rain/chapter-49-1",
-    "https://bbato.com/read/december-rain/chapter-49.2"
+    "https://kaliscan.com/manga/82487-blood-poker/chapter-37",
+    "https://kaliscan.com/manga/82487-blood-poker/chapter-38",
+    "https://kaliscan.com/manga/73803-reverse-thinking/chapter-44",
+    "https://kaliscan.com/manga/73803-reverse-thinking/chapter-45",
+    "https://kaliscan.com/manga/73803-reverse-thinking/chapter-46",
+    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-1",
+    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-2",
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking  https://kaliscan.com/manga/3172-radio-storm/chapter-2
