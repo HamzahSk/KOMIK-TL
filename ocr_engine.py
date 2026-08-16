@@ -17,6 +17,10 @@ class OCREngine:
         img = cv2.imread(img_path)
         if img is None:
             return []
+            
+        if img.shape[0] <= 10 or img.shape[1] <= 10:
+            print(f"[Warning] Melewati gambar kosong/terlalu kecil: {img_path}")
+            return []
 
         new_width = img.shape[1] * 2
         new_height = img.shape[0] * 2

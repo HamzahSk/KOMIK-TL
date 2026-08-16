@@ -529,6 +529,12 @@ def smart_slice_image(
             
             found_cut = best_y
 
+        # --- KODE BARU: Pastikan hasil potong tidak 0 piksel ---
+        if found_cut <= y_start:
+            print(f"[Warning] Perhitungan potong paksa gagal, memaksa potong di ukuran target.")
+            found_cut = min(y_start + target_height, height)
+        # --------------------------------------------------------
+
         # Simpan potongan
         slice_img = img[y_start:found_cut, :]
         slice_path = os.path.join(out_dir, f"{base_name}_part{part}.jpg")

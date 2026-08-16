@@ -16,7 +16,7 @@ URLCHAPTER = [
     "https://kaliscan.com/manga/84343-ghostly-connection/chapter-15",
     "https://kaliscan.com/manga/84343-ghostly-connection/chapter-16",
     "https://kaliscan.com/manga/84343-ghostly-connection/chapter-17",
-    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-18",
+    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-18"
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking  https://kaliscan.com/manga/3172-radio-storm/chapter-2
