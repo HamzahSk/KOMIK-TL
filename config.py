@@ -1,13 +1,22 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-    "https://kaliscan.com/manga/82487-blood-poker/chapter-37",
-    "https://kaliscan.com/manga/82487-blood-poker/chapter-38",
-    "https://kaliscan.com/manga/73803-reverse-thinking/chapter-44",
-    "https://kaliscan.com/manga/73803-reverse-thinking/chapter-45",
-    "https://kaliscan.com/manga/73803-reverse-thinking/chapter-46",
-    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-1",
-    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-2",
+    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-3",
+    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-4",
+    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-5",
+    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-6",
+    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-7",
+    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-8",
+    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-9",
+    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-10",
+    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-11",
+    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-12",
+    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-13",
+    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-14",
+    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-15",
+    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-16",
+    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-17",
+    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-18",
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking  https://kaliscan.com/manga/3172-radio-storm/chapter-2
