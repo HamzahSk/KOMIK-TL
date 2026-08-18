@@ -13,10 +13,10 @@ class AiTranslator:
         self.main_model = 'gpt-5-mini'
         
         # Konfigurasi API Fallback Baru (Proxy-GLS - gpt-oss-120b)
-        self.new_fallback_url = 'https://api-public.proxy-gls.de5.net/v1/chat/completions'
+        self.new_fallback_url = 'https://vsllm.com/v1/chat/completions'
         # Ambil dari config jika ada, jika tidak gunakan string kosong/default
-        self.new_fallback_key = getattr(config, "NEW_API_KEY", "sk-zKxezMeHaET0KtMA1K9PSnl3mK5heHCyRqkModd9fuzPMLIw")
-        self.new_fallback_model = 'gpt-oss-120b'
+        self.new_fallback_key = getattr(config, "NEW_API_KEY", "sk-dHDsiQJRGgbPOeZnfJoVwpxeM56eXI5Yusp5L3vpQWEx0J3x")
+        self.new_fallback_model = 'gpt-5.4-mini'
         
         # Konfigurasi API Fallback 1 Lama (Deepseek Custom Endpoint / Vercel)
         self.fallback_url_1 = 'https://ai-seerver.vercel.app/chat/deepseek'

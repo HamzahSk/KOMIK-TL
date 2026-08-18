@@ -1,22 +1,24 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-3",
-    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-4",
-    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-5",
-    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-6",
-    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-7",
-    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-8",
-    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-9",
-    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-10",
-    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-11",
-    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-12",
-    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-13",
-    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-14",
-    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-15",
-    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-16",
-    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-17",
-    "https://kaliscan.com/manga/84343-ghostly-connection/chapter-18"
+    "https://kaliscan.com/manga/20139-lost-in-the-cloud/chapter-107",
+    "https://kaliscan.com/manga/20139-lost-in-the-cloud/chapter-108",
+    "https://kaliscan.com/manga/20139-lost-in-the-cloud/chapter-109",
+    "https://kaliscan.com/manga/20139-lost-in-the-cloud/chapter-109.5",
+    "https://kaliscan.com/manga/20139-lost-in-the-cloud/chapter-110",
+    "https://kaliscan.com/manga/20139-lost-in-the-cloud/chapter-111",
+    "https://kaliscan.com/manga/20139-lost-in-the-cloud/chapter-111.5",
+    "https://kaliscan.com/manga/20139-lost-in-the-cloud/chapter-112",
+    "https://kaliscan.com/manga/20139-lost-in-the-cloud/chapter-113",
+    "https://kaliscan.com/manga/20139-lost-in-the-cloud/chapter-114",
+    "https://kaliscan.com/manga/20139-lost-in-the-cloud/chapter-115",
+    "https://kaliscan.com/manga/20139-lost-in-the-cloud/chapter-116",
+    "https://kaliscan.com/manga/20139-lost-in-the-cloud/chapter-117",
+    "https://kaliscan.com/manga/20139-lost-in-the-cloud/chapter-118",
+    "https://kaliscan.com/manga/20139-lost-in-the-cloud/chapter-119",
+    "https://kaliscan.com/manga/20139-lost-in-the-cloud/chapter-120",
+    "https://kaliscan.com/manga/20139-lost-in-the-cloud/chapter-121",
+    "https://kaliscan.com/manga/20139-lost-in-the-cloud/chapter-122",
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking  https://kaliscan.com/manga/3172-radio-storm/chapter-2
