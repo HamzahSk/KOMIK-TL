@@ -1,29 +1,9 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-    "https://kaliscan.com/manga/34425-reunion/chapter-46.5",
-    "https://kaliscan.com/manga/34425-reunion/chapter-50.1",
-    "https://kaliscan.com/manga/34425-reunion/chapter-50.2",
-    "https://kaliscan.com/manga/34425-reunion/chapter-58",
-    "https://kaliscan.com/manga/34425-reunion/chapter-59",
-    "https://kaliscan.com/manga/34425-reunion/chapter-60",
-    "https://kaliscan.com/manga/34425-reunion/chapter-61",
-    "https://kaliscan.com/manga/34425-reunion/chapter-62",
-    "https://kaliscan.com/manga/34425-reunion/chapter-63",
-    "https://kaliscan.com/manga/34425-reunion/chapter-64",
-    "https://kaliscan.com/manga/34425-reunion/chapter-65",
-    "https://kaliscan.com/manga/34425-reunion/chapter-66",
-    "https://kaliscan.com/manga/34425-reunion/chapter-67",
-    "https://kaliscan.com/manga/34425-reunion/chapter-68",
-    "https://kaliscan.com/manga/34425-reunion/chapter-69",
-    "https://kaliscan.com/manga/34425-reunion/chapter-70",
-    "https://kaliscan.com/manga/34425-reunion/chapter-71",
-    "https://kaliscan.com/manga/34425-reunion/chapter-72",
-    "https://kaliscan.com/manga/34425-reunion/chapter-73",
-    "https://kaliscan.com/manga/34425-reunion/chapter-74",
-    "https://kaliscan.com/manga/34425-reunion/chapter-75",
-    "https://kaliscan.com/manga/34425-reunion/chapter-76",
-    "https://kaliscan.com/manga/34425-reunion/chapter-77",
+    "https://kaliscan.com/manga/34425-reunion/chapter-78",
+    "https://kaliscan.com/manga/34425-reunion/chapter-79",
+    "https://kaliscan.com/manga/34425-reunion/chapter-79.5",
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking  https://kaliscan.com/manga/3172-radio-storm/chapter-2
