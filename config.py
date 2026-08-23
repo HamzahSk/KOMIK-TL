@@ -1,26 +1,20 @@
 # config.py
 URLMANGA = [""] # https://bbato.com/manga/soulbound"] 
 URLCHAPTER = [
-    "https://kaliscan.com/manga/49669-perle/chapter-1",
-    "https://kaliscan.com/manga/49669-perle/chapter-2",
-    "https://kaliscan.com/manga/49669-perle/chapter-3",
-    "https://kaliscan.com/manga/49669-perle/chapter-4",
-    "https://kaliscan.com/manga/49669-perle/chapter-5",
-    "https://kaliscan.com/manga/49669-perle/chapter-6",
-    "https://kaliscan.com/manga/49669-perle/chapter-7",
-    "https://kaliscan.com/manga/49669-perle/chapter-8",
-    "https://kaliscan.com/manga/49669-perle/chapter-9",
-    "https://kaliscan.com/manga/49669-perle/chapter-10",
-    "https://kaliscan.com/manga/49669-perle/chapter-11",
-    "https://kaliscan.com/manga/49669-perle/chapter-12",
-    "https://kaliscan.com/manga/49669-perle/chapter-13",
-    "https://kaliscan.com/manga/49669-perle/chapter-14",
-    "https://kaliscan.com/manga/49669-perle/chapter-15",
-    "https://kaliscan.com/manga/49669-perle/chapter-16",
     "https://kaliscan.com/manga/49669-perle/chapter-17",
     "https://kaliscan.com/manga/49669-perle/chapter-18",
     "https://kaliscan.com/manga/49669-perle/chapter-19",
     "https://kaliscan.com/manga/49669-perle/chapter-20",
+    "https://kaliscan.com/manga/49669-perle/chapter-21",
+    "https://kaliscan.com/manga/49669-perle/chapter-22",
+    "https://kaliscan.com/manga/49669-perle/chapter-23",
+    "https://kaliscan.com/manga/49669-perle/chapter-24",
+    "https://kaliscan.com/manga/49669-perle/chapter-25",
+    "https://kaliscan.com/manga/49669-perle/chapter-26",
+    "https://kaliscan.com/manga/49669-perle/chapter-27",
+    "https://kaliscan.com/manga/49669-perle/chapter-28",
+    "https://kaliscan.com/manga/49669-perle/chapter-29",
+    "https://kaliscan.com/manga/49669-perle/chapter-30",
 ]
  # ["https://vymanga.com/read/reverse-thinking/2853358"]  ["https://bbato.com/read/soulbound/chapter-0"] 
 # https://vymanga.com/manga/reverse-thinking  https://kaliscan.com/manga/3172-radio-storm/chapter-2
